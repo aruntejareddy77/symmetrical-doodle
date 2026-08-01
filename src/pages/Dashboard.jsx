@@ -16,7 +16,11 @@ import NotificationCenter from '../components/Notifications/NotificationCenter';
 import useWebSocket from '../hooks/useWebSocket';
 import { useAuth } from '../context/AuthContext';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
+const RENDER_API = 'https://city-operations-center-coc-i6aw.onrender.com/api/v1';
+const API_URL = import.meta.env.VITE_API_URL || 
+  (typeof window !== 'undefined' && (window.location.hostname.includes('vercel.app') || (!['localhost', '127.0.0.1'].includes(window.location.hostname) && !window.location.hostname.startsWith('10.') && !window.location.hostname.startsWith('192.')))
+    ? RENDER_API 
+    : 'http://localhost:3000/api/v1');
 
 const mapComplaintFromBackend = (c) => ({
   complaint_id: c.id || c.complaint_id,
@@ -123,7 +127,15 @@ export default function Dashboard() {
     }
   }, [synced]);
 
-  const { status: wsStatus } = useWebSocket('ws://localhost:3000/ws', {
+  const getWsUrl = () => {
+    if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
+      return 'wss://city-operations-center-coc-i6aw.onrender.com/ws';
+    }
+    const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+    return `ws://${host}:3000/ws`;
+  };
+
+  const { status: wsStatus } = useWebSocket(getWsUrl(), {
     onMessage: handleWsMessage,
     mockMode: false,
   });
@@ -416,34 +428,35 @@ export default function Dashboard() {
                 <span className="text-sm font-semibold">Assignment Latency</span>
                 <span className="badge badge-success">On Track</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', marginTop: 'var(--space-3)', flexWrap: 'wrap' }}>
                 <div style={{
-                  width: 80,
-                  height: 80,
+                  width: 72,
+                  height: 72,
                   borderRadius: '50%',
                   background: `conic-gradient(var(--accent-primary) ${85 * 3.6}deg, var(--accent-light) 0deg)`,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
+                  flexShrink: 0,
                 }}>
                   <div style={{
-                    width: 60,
-                    height: 60,
+                    width: 54,
+                    height: 54,
                     borderRadius: '50%',
                     background: 'var(--bg-primary)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: 'var(--text-lg)',
+                    fontSize: 'var(--text-base)',
                     fontWeight: 'var(--font-bold)',
                     color: 'var(--accent-primary)',
                   }}>
                     85%
                   </div>
                 </div>
-                <div>
-                  <div className="text-sm font-semibold">Under 5s Target</div>
-                  <div className="text-xs text-secondary" style={{ marginTop: 4 }}>17 of 20 incidents dispatched within SLA</div>
+                <div style={{ minWidth: 140, flex: 1 }}>
+                  <div className="text-sm font-semibold">Under 5s SLA Target</div>
+                  <div className="text-xs text-secondary" style={{ marginTop: 4 }}>17 of 20 incidents dispatched within target SLA</div>
                 </div>
               </div>
             </div>
@@ -453,7 +466,7 @@ export default function Dashboard() {
                 <span className="text-sm font-semibold">Team Utilization</span>
                 <span className="badge badge-info">Live</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
                 {[
                   { label: 'Available', value: 60, color: 'var(--status-success)' },
                   { label: 'En Route', value: 20, color: 'var(--status-info)' },

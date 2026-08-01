@@ -25,3 +25,10 @@ export const me = async (req: any, res: any, next: any) => {
     sendSuccess(res, sanitised, "Current user retrieved");
   } catch (err) { next(err); }
 };
+
+export const googleLogin = async (req: any, res: any, next: any) => {
+  try {
+    const result = await service.googleLogin(req.body || {}, { requestId: req.requestId });
+    sendSuccess(res, result, "Google login successful");
+  } catch (err) { next(err); }
+};

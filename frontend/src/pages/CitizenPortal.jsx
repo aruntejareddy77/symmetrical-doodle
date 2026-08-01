@@ -8,7 +8,11 @@ import {
   Trash2, Navigation, Upload, Check
 } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
+const RENDER_API = 'https://city-operations-center-coc-i6aw.onrender.com/api/v1';
+const API_URL = import.meta.env.VITE_API_URL || 
+  (typeof window !== 'undefined' && (window.location.hostname.includes('vercel.app') || (!['localhost', '127.0.0.1'].includes(window.location.hostname) && !window.location.hostname.startsWith('10.') && !window.location.hostname.startsWith('192.')))
+    ? RENDER_API 
+    : 'http://localhost:3000/api/v1');
 
 /* ── Status Color & Label Mapping ──────────────────────────── */
 const STATUS_CONFIG = {

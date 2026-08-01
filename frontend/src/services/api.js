@@ -1,4 +1,8 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
+const RENDER_API = 'https://city-operations-center-coc-i6aw.onrender.com/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 
+  (typeof window !== 'undefined' && (window.location.hostname.includes('vercel.app') || (!['localhost', '127.0.0.1'].includes(window.location.hostname) && !window.location.hostname.startsWith('10.') && !window.location.hostname.startsWith('192.')))
+    ? RENDER_API 
+    : 'http://localhost:3000/api/v1');
 
 async function fetchWithAuth(endpoint, options = {}) {
   const token = localStorage.getItem('accessToken') || '';
