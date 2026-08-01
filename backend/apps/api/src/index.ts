@@ -77,7 +77,7 @@ const server = http.createServer(app);
 // Initialize WebSocket Server
 initWebSocketServer(server);
 
-const PORT = process.env.PORT || config.PORT || 3000;
-server.listen(PORT, () => {
+const PORT = Number(process.env.PORT || config.PORT || 3000);
+server.listen(PORT, "0.0.0.0", () => {
   logger.info({ message: "API Gateway started (HTTP + WebSocket)", port: PORT, env: config.NODE_ENV });
 });

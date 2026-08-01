@@ -7,8 +7,11 @@ import path from 'path';
 // from a parent workspace, that auto-discovery can fail. We load it explicitly.
 dotenvConfig({ path: path.resolve(__dirname, '../.env') });
 dotenvConfig({ path: path.resolve(__dirname, '../../../.env') });
-dotenvConfig({ path: path.resolve(__dirname, '../../../../.env') });
 dotenvConfig();
+
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = 'postgresql://vizagops:vizagops_password@localhost:5432/vizagops_db?schema=public';
+}
 
 // Prevent multiple instances of Prisma Client in development
 declare global {

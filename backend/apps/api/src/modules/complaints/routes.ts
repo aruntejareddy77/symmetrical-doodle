@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { validateRequest, authenticateJWT } from "@vizagops/api";
+import { validateRequest } from "@vizagops/api";
 import { CreateComplaintSchema } from "@vizagops/validation";
 import { createComplaint, getComplaints } from "./controller";
 
 const router = Router();
-router.post("/", authenticateJWT, validateRequest(CreateComplaintSchema), createComplaint);
-router.get("/", authenticateJWT, getComplaints);
+router.post("/", validateRequest(CreateComplaintSchema), createComplaint);
+router.get("/", getComplaints);
 export default router;

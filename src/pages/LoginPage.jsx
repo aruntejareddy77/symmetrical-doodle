@@ -20,23 +20,29 @@ export default function LoginPage() {
   // Set default credentials based on role param
   useEffect(() => {
     if (roleParam === 'citizen') {
-      setEmail('resident@janasetu.ai');
-      setPassword('Resident@123!');
+      setEmail('citizen@gmail.com');
+      setPassword('password123');
     } else {
-      setEmail('admin@janasetu.ai');
-      setPassword('Admin@123!');
+      setEmail('admin@vizagops.gov.in');
+      setPassword('password123');
     }
   }, [roleParam]);
 
   const handleQuickFillAdmin = () => {
-    setEmail('admin@janasetu.ai');
-    setPassword('Admin@123!');
+    setEmail('admin@vizagops.gov.in');
+    setPassword('password123');
+    setError('');
+  };
+
+  const handleQuickFillWardOfficer = () => {
+    setEmail('officer@vizagops.gov.in');
+    setPassword('password123');
     setError('');
   };
 
   const handleQuickFillResident = () => {
-    setEmail('resident@janasetu.ai');
-    setPassword('Resident@123!');
+    setEmail('citizen@gmail.com');
+    setPassword('password123');
     setError('');
   };
 
@@ -52,7 +58,13 @@ export default function LoginPage() {
 
     const result = await login(email, password);
     if (result.success) {
-      navigate('/dashboard', { replace: true });
+      // Route based on user role
+      const role = result.user?.role?.toUpperCase();
+      if (role === 'CITIZEN') {
+        navigate('/citizen', { replace: true });
+      } else {
+        navigate('/dashboard', { replace: true });
+      }
     } else {
       setError(result.error || 'Authentication failed. Please check your credentials.');
       setLoading(false);
@@ -109,7 +121,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={loading}
-                placeholder="email@janasetu.ai"
+                placeholder="email@vizagops.gov.in"
                 className="w-full bg-[#fefae0] border border-[#d4cc9a] rounded-xl pl-10 pr-4 py-3 text-xs text-[#283618] focus:ring-2 focus:ring-[#dda15e] outline-none"
               />
             </div>
@@ -154,14 +166,22 @@ export default function LoginPage() {
           <p className="text-[10px] text-[#8a9460] font-bold uppercase tracking-widest mb-1 text-center">
             Demo Accounts Quick-Select
           </p>
-          <div className="flex justify-center gap-2">
+          <div className="flex justify-center gap-2 flex-wrap">
             <button
               type="button"
               onClick={handleQuickFillAdmin}
               disabled={loading}
               className="px-3 py-2 bg-[#dda15e]/20 text-[#bc6c25] text-xs font-bold rounded-xl hover:bg-[#dda15e]/30 transition-colors"
             >
-              Officer (Admin)
+              Admin
+            </button>
+            <button
+              type="button"
+              onClick={handleQuickFillWardOfficer}
+              disabled={loading}
+              className="px-3 py-2 bg-[#283618]/10 text-[#283618] text-xs font-bold rounded-xl hover:bg-[#283618]/20 transition-colors"
+            >
+              Ward Officer
             </button>
             <button
               type="button"
@@ -169,7 +189,7 @@ export default function LoginPage() {
               disabled={loading}
               className="px-3 py-2 bg-[#606c38]/15 text-[#606c38] text-xs font-bold rounded-xl hover:bg-[#606c38]/25 transition-colors"
             >
-              Resident (Citizen)
+              Citizen
             </button>
           </div>
         </div>

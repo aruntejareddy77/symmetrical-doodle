@@ -1,29 +1,39 @@
-import { useRef, useEffect, useCallback, useState } from 'react';
-import gsap from 'gsap';
-import { Layers, ZoomIn, ZoomOut, Locate, Navigation } from 'lucide-react';
-import { IconButton } from '../UI/Buttons';
-import { MapSkeleton } from '../Loader/SkeletonLoaders';
+import { useState, useEffect, useRef } from 'react';
+import { Map, MapMarker, MarkerContent, MapControls } from '@/components/ui/map';
+import { Layers } from 'lucide-react';
 
-/**
- * LiveMap — MapLibre GL JS powered real-time map.
- * 
- * Features:
- *  - Animated marker placement (drop + ripple)
- *  - Pulsing active incidents
- *  - Smooth camera fly-to on new events
- *  - Hover effects on markers
- *  - Soft glow on selected markers
- *  - Style selector (Carto / OSM / OSM 3D)
- */
-
-const MAP_STYLES = {
-  carto: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-  openstreetmap: 'https://tiles.openfreemap.org/styles/bright',
-  openstreetmap3d: 'https://tiles.openfreemap.org/styles/liberty',
+const openStreetMapStyle = {
+  version: 8,
+  sources: {
+    'osm-tiles': {
+      type: 'raster',
+      tiles: [
+        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
+      ],
+      tileSize: 256,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }
+  },
+  layers: [
+    {
+      id: 'osm-layer',
+      type: 'raster',
+      source: 'osm-tiles',
+      minzoom: 0,
+      maxzoom: 19
+    }
+  ]
 };
 
-// Visakhapatnam center coords
-const DEFAULT_CENTER = [83.2185, 17.6868];
+const mapStyles = {
+  default: undefined,
+  openstreetmap: openStreetMapStyle,
+  openstreetmap3d: 'https://demotiles.maplibre.org/style.json',
+};
+
+const DEFAULT_CENTER = [83.2185, 17.6868]; // Visakhapatnam
 const DEFAULT_ZOOM = 14;
 
 export default function LiveMap({
@@ -33,266 +43,175 @@ export default function LiveMap({
   selectedIncident = null,
   onMarkerClick,
 }) {
-  const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
-  const markersRef = useRef({});
-  const [mapLoaded, setMapLoaded] = useState(false);
-  const [styleKey, setStyleKey] = useState('openstreetmap');
+  const [styleKey, setStyleKey] = useState('default');
+  const selectedStyle = mapStyles[styleKey];
+  const is3D = styleKey === 'openstreetmap3d';
 
-  // Initialize MapLibre
+  // Toggle 3D pitch tilt on style change
   useEffect(() => {
-    if (!mapContainerRef.current) return;
+    mapRef.current?.easeTo({ pitch: is3D ? 60 : 0, duration: 600 });
+  }, [is3D]);
 
-    let map;
-    const initMap = async () => {
-      try {
-        const maplibregl = await import('maplibre-gl');
-        await import('maplibre-gl/dist/maplibre-gl.css');
-
-        map = new maplibregl.Map({
-          container: mapContainerRef.current,
-          style: MAP_STYLES[styleKey] || MAP_STYLES.openstreetmap,
-          center: DEFAULT_CENTER,
-          zoom: DEFAULT_ZOOM,
-          pitch: 0,
-          bearing: 0,
-          attributionControl: false,
-        });
-
-        map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
-
-        map.on('load', () => {
-          mapRef.current = map;
-          setMapLoaded(true);
-          // Hide complaints and sensor markers when zoomed out too far
-          map.on('zoom', () => {
-            const zoom = map.getZoom();
-            const hide = zoom < 12;
-            Object.values(markersRef.current).forEach((m) => {
-              if (!m._customType) return;
-              if (m._customType === 'team') return; // always show teams
-              const el = m.getElement();
-              el.style.display = hide ? 'none' : '';
-            });
-          });
-          // Hide complaints and sensor markers when zoomed out too far
-          map.on('zoom', () => {
-            const zoom = map.getZoom();
-            const hide = zoom < 12;
-            Object.values(markersRef.current).forEach((m) => {
-              if (!m._customType) return;
-              if (m._customType === 'team') return; // always show teams
-              const el = m.getElement();
-              el.style.display = hide ? 'none' : '';
-            });
-          });
-        });
-      } catch (err) {
-        console.error('[LiveMap] Failed to initialize MapLibre:', err);
-      }
-    };
-
-    initMap();
-
-    return () => {
-      map?.remove();
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Handle style changes dynamically
-  useEffect(() => {
-    if (!mapRef.current || !mapLoaded) return;
-    const is3D = styleKey === 'openstreetmap3d';
-    mapRef.current.setStyle(MAP_STYLES[styleKey]);
-    mapRef.current.easeTo({ pitch: is3D ? 60 : 0, duration: 500 });
-  }, [styleKey, mapLoaded]);
-
-  // Add/update complaint markers
-  useEffect(() => {
-    if (!mapRef.current || !mapLoaded) return;
-
-    complaints.forEach((complaint) => {
-      const markerId = `complaint-${complaint.complaint_id}`;
-      if (markersRef.current[markerId]) return;
-
-      addMarker({
-        id: markerId,
-        type: 'complaint',
-        lng: complaint.location.lng,
-        lat: complaint.location.lat,
-        color: 'var(--status-danger)',
-        label: complaint.type,
-        onClick: () => onMarkerClick?.('complaint', complaint),
-      });
-    });
-  }, [complaints, mapLoaded, onMarkerClick]);
-
-  // Add/update sensor event markers
-  useEffect(() => {
-    if (!mapRef.current || !mapLoaded) return;
-
-    sensorEvents.forEach((event) => {
-      const markerId = `sensor-${event.event_id}`;
-      if (markersRef.current[markerId]) return;
-
-      addMarker({
-        id: markerId,
-        type: 'sensor',
-        lng: event.location.lng,
-        lat: event.location.lat,
-        color: 'var(--status-warning)',
-        label: event.event_type,
-        onClick: () => onMarkerClick?.('sensor', event),
-      });
-    });
-  }, [sensorEvents, mapLoaded, onMarkerClick]);
-
-  // Add/update field team markers
-  useEffect(() => {
-    if (!mapRef.current || !mapLoaded) return;
-
-    fieldTeams.forEach((team) => {
-      const markerId = `team-${team.team_id}`;
-      const existingMarker = markersRef.current[markerId];
-
-      if (existingMarker) {
-        // Update position smoothly
-        existingMarker.setLngLat([team.location.lng, team.location.lat]);
-        return;
-      }
-
-      addMarker({
-        id: markerId,
-        type: 'team',
-        lng: team.location.lng,
-        lat: team.location.lat,
-        color: 'var(--status-info)',
-        label: team.team_id,
-        onClick: () => onMarkerClick?.('team', team),
-      });
-    });
-  }, [fieldTeams, mapLoaded, onMarkerClick]);
-
-  // Center map on selected incident (orange spot) and keep it in the middle
+  // Fly to selected incident marker
   useEffect(() => {
     if (!mapRef.current || !selectedIncident) return;
-    const { lng, lat } = selectedIncident.location;
-    mapRef.current.easeTo({
+
+    const lng = selectedIncident.longitude || selectedIncident.location?.lng || DEFAULT_CENTER[0];
+    const lat = selectedIncident.latitude || selectedIncident.location?.lat || DEFAULT_CENTER[1];
+
+    mapRef.current.flyTo({
       center: [lng, lat],
       zoom: 16,
-      duration: 800,
+      duration: 1000,
       essential: true,
     });
   }, [selectedIncident]);
 
-  const addMarker = useCallback(async ({ id, type, lng, lat, color, label, onClick }) => {
-    if (!mapRef.current) return;
-
-    const maplibregl = await import('maplibre-gl');
-
-    // Create custom marker element
-    const el = document.createElement('div');
-    el.className = `map-marker map-marker-${type}`;
-    el.style.cssText = `
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      background: ${color};
-      border: 3px solid var(--bg-primary);
-      box-shadow: 0 2px 8px rgba(40,54,24,0.15);
-      cursor: pointer;
-      transition: box-shadow 0.2s ease;
-      position: relative;
-    `;
-
-    // Pulse ring for complaints
-    if (type === 'complaint') {
-      const pulse = document.createElement('div');
-      pulse.style.cssText = `
-        position: absolute;
-        inset: -6px;
-        border-radius: 50%;
-        border: 2px solid ${color};
-        opacity: 0;
-      `;
-      el.appendChild(pulse);
-
-      // GSAP ripple animation
-      gsap.fromTo(pulse,
-        { scale: 0.8, opacity: 0.8 },
-        { scale: 1.8, opacity: 0, duration: 1.5, repeat: -1, ease: 'power1.out' }
-      );
-    }
-
-    // Hover glow
-    el.addEventListener('mouseenter', () => {
-      gsap.to(el, { boxShadow: `0 0 16px 4px ${color}44`, duration: 0.2 });
-    });
-    el.addEventListener('mouseleave', () => {
-      gsap.to(el, { boxShadow: '0 2px 8px rgba(0,0,0,0.2)', duration: 0.2 });
-    });
-
-    const marker = new maplibregl.Marker({ element: el })
-      .setLngLat([lng, lat])
-      .addTo(mapRef.current);
-    marker._customType = type;
-
-    // Marker drop animation
-    gsap.fromTo(el,
-      { y: -40, opacity: 0, scale: 0.5 },
-      { y: 0, opacity: 1, scale: 1, duration: 0.5, ease: 'bounce.out' }
-    );
-
-    el.addEventListener('click', () => onClick?.());
-
-    markersRef.current[id] = marker;
-  }, []);
-
   return (
-    <div className="map-container relative" style={{ height: '100%' }}>
-      {!mapLoaded && <MapSkeleton />}
+    <div className="map-container relative w-full h-full min-h-[460px] rounded-2xl overflow-hidden shadow-lg border border-[#d4cc9a]">
+      {/* Interactive Map */}
+      <Map
+        ref={mapRef}
+        center={DEFAULT_CENTER}
+        zoom={DEFAULT_ZOOM}
+        pitch={is3D ? 60 : 0}
+        bearing={0}
+        styles={
+          selectedStyle
+            ? { light: selectedStyle, dark: selectedStyle }
+            : undefined
+        }
+      >
+        <MapControls position="bottom-right" showZoom showCompass />
 
-      {/* Map Style Dropdown (matches LandingMapPreview) */}
-      <div className="absolute top-4 right-4 z-10" style={{ zIndex: 200 }}>
+        {/* Complaint Markers */}
+        {complaints.map((c) => {
+          const id = c.id || c.complaint_id;
+          const lng = c.longitude || c.location?.lng || DEFAULT_CENTER[0];
+          const lat = c.latitude || c.location?.lat || DEFAULT_CENTER[1];
+          const title = c.title || c.description || 'Incident';
+          const isCritical = c.priority === 'CRITICAL' || c.priority === 'HIGH';
+
+          return (
+            <MapMarker
+              key={`complaint-${id}`}
+              longitude={lng}
+              latitude={lat}
+              onClick={() => onMarkerClick?.('complaint', c)}
+            >
+              <MarkerContent>
+                <div
+                  className="relative group flex items-center justify-center cursor-pointer transition-transform hover:scale-125"
+                  title={`${title} (${id})`}
+                >
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${isCritical ? 'bg-red-500 opacity-75' : 'bg-amber-500 opacity-60'}`}></span>
+                  <div
+                    style={{
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '50%',
+                      background: isCritical ? '#e63946' : '#dda15e',
+                      border: '3px solid #ffffff',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                    }}
+                  />
+                </div>
+              </MarkerContent>
+            </MapMarker>
+          );
+        })}
+
+        {/* Field Team Markers */}
+        {fieldTeams.map((team) => {
+          const id = team.id || team.team_id;
+          const lng = team.longitude || team.location?.lng || team.currentLng || DEFAULT_CENTER[0] + 0.005;
+          const lat = team.latitude || team.location?.lat || team.currentLat || DEFAULT_CENTER[1] + 0.005;
+          const name = team.name || team.team_id || 'Field Team';
+
+          return (
+            <MapMarker
+              key={`team-${id}`}
+              longitude={lng}
+              latitude={lat}
+              onClick={() => onMarkerClick?.('team', team)}
+            >
+              <MarkerContent>
+                <div
+                  className="flex items-center justify-center cursor-pointer transition-transform hover:scale-125"
+                  title={`Field Team: ${name}`}
+                >
+                  <div
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '8px',
+                      background: '#2563eb',
+                      border: '2.5px solid #ffffff',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                      color: '#ffffff',
+                      fontSize: '11px',
+                      fontWeight: 'bold',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    🛡️
+                  </div>
+                </div>
+              </MarkerContent>
+            </MapMarker>
+          );
+        })}
+
+        {/* Sensor Event Markers */}
+        {sensorEvents.map((sns) => {
+          const id = sns.id || `SNS-${Math.random()}`;
+          const lng = sns.longitude || sns.lng || DEFAULT_CENTER[0] - 0.004;
+          const lat = sns.latitude || sns.lat || DEFAULT_CENTER[1] - 0.003;
+
+          return (
+            <MapMarker
+              key={`sensor-${id}`}
+              longitude={lng}
+              latitude={lat}
+              onClick={() => onMarkerClick?.('sensor', sns)}
+            >
+              <MarkerContent>
+                <div
+                  className="flex items-center justify-center cursor-pointer transition-transform hover:scale-125"
+                  title={`Sensor Node: ${sns.type || sns.id}`}
+                >
+                  <div
+                    style={{
+                      width: '18px',
+                      height: '18px',
+                      borderRadius: '50%',
+                      background: '#bc6c25',
+                      border: '2px solid #ffffff',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
+                    }}
+                  />
+                </div>
+              </MarkerContent>
+            </MapMarker>
+          );
+        })}
+      </Map>
+
+      {/* Style Switcher Selector matching Landing Page */}
+      <div className="absolute top-4 right-4 z-10 flex items-center gap-2 bg-[#faf5d0]/95 backdrop-blur border border-[#d4cc9a] p-1.5 rounded-xl shadow-md">
+        <Layers size={15} className="text-[#bc6c25] ml-1" />
         <select
           value={styleKey}
           onChange={(e) => setStyleKey(e.target.value)}
-          className="bg-[#faf5d0] text-[#283618] rounded-md border border-[#d4cc9a] px-3 py-1.5 text-sm shadow font-semibold focus:outline-none cursor-pointer"
+          className="bg-transparent text-[#283618] text-xs font-extrabold focus:outline-none cursor-pointer pr-1"
         >
-          <option value="carto">Default (Carto)</option>
-          <option value="openstreetmap">OpenStreetMap</option>
-          <option value="openstreetmap3d">OpenStreetMap 3D</option>
+          <option value="default">Default (Carto Voyager)</option>
+          <option value="openstreetmap">OpenStreetMap Raster</option>
+          <option value="openstreetmap3d">OpenStreetMap 3D Pitch</option>
         </select>
-      </div>
-
-      <div
-        ref={mapContainerRef}
-        style={{ width: '100%', height: '100%', minHeight: 500, visibility: mapLoaded ? 'visible' : 'hidden' }}
-      />
-
-      {/* Map controls overlay */}
-      <div className="map-overlay-controls" style={{ zIndex: 10 }}>
-        <IconButton icon={ZoomIn} label="Zoom in" onClick={() => mapRef.current?.zoomIn()} />
-        <IconButton icon={ZoomOut} label="Zoom out" onClick={() => mapRef.current?.zoomOut()} />
-        <IconButton icon={Locate} label="Center on ward" onClick={() => mapRef.current?.flyTo({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM })} />
-        <IconButton icon={Layers} label="Toggle layers" />
-      </div>
-
-      {/* Legend */}
-      <div className="map-legend" style={{ zIndex: 10 }}>
-        <div className="map-legend-item">
-          <span className="map-legend-dot" style={{ background: 'var(--status-danger)' }} />
-          <span>Complaints</span>
-        </div>
-        <div className="map-legend-item">
-          <span className="map-legend-dot" style={{ background: 'var(--status-warning)' }} />
-          <span>Sensor Events</span>
-        </div>
-        <div className="map-legend-item">
-          <span className="map-legend-dot" style={{ background: 'var(--status-info)' }} />
-          <span>Field Teams</span>
-        </div>
       </div>
     </div>
   );

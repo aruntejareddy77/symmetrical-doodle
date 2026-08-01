@@ -1,10 +1,35 @@
 import { useState, useEffect, useRef } from "react";
-import { Map } from "@/components/UI/map";
+import { Map } from "@/components/ui/map";
+
+const openStreetMapStyle = {
+  version: 8,
+  sources: {
+    "osm-tiles": {
+      type: "raster",
+      tiles: [
+        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"
+      ],
+      tileSize: 256,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }
+  },
+  layers: [
+    {
+      id: "osm-layer",
+      type: "raster",
+      source: "osm-tiles",
+      minzoom: 0,
+      maxzoom: 19
+    }
+  ]
+};
 
 const styles = {
   default: undefined,
-  openstreetmap: "https://tiles.openfreemap.org/styles/bright",
-  openstreetmap3d: "https://tiles.openfreemap.org/styles/liberty",
+  openstreetmap: openStreetMapStyle,
+  openstreetmap3d: "https://demotiles.maplibre.org/style.json",
 };
 
 export default function LandingMapPreview() {

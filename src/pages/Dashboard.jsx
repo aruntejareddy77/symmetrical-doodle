@@ -13,7 +13,35 @@ import StatCard from '../components/Stats/StatCard';
 import LiveMap from '../components/Map/LiveMap';
 import TriagePanel from '../components/Triage/TriagePanel';
 import NotificationCenter from '../components/Notifications/NotificationCenter';
-import useWebSocket, { VIZAG_LOCATIONS } from '../hooks/useWebSocket';
+import useWebSocket from '../hooks/useWebSocket';
+import { useAuth } from '../context/AuthContext';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
+
+const mapComplaintFromBackend = (c) => ({
+  complaint_id: c.id || c.complaint_id,
+  id: c.id || c.complaint_id,
+  title: c.title || c.description || 'Citizen Complaint',
+  type: c.category?.toLowerCase() || c.type || 'pothole',
+  category: c.category || 'INFRASTRUCTURE',
+  priority: c.priority || 'HIGH',
+  description: c.description || '',
+  location: { lat: c.latitude || c.location?.lat || 17.6868, lng: c.longitude || c.location?.lng || 83.2185 },
+  latitude: c.latitude || c.location?.lat || 17.6868,
+  longitude: c.longitude || c.location?.lng || 83.2185,
+  ward_id: c.ward || 'GVMC-W12',
+  ward: c.ward || 'GVMC-W12',
+  status: c.status?.toLowerCase() || 'received',
+  assigned_team_id: c.assignments?.[0]?.fieldTeamId || null,
+  reported_at: c.createdAt || new Date().toISOString()
+});
+
+const mapFieldTeamFromBackend = (t) => ({
+  team_id: t.id,
+  status: t.availability?.toLowerCase() || 'available',
+  location: { lat: t.currentLat || 17.689, lng: t.currentLng || 83.217 },
+  updated_at: t.updatedAt || new Date().toISOString()
+});
 
 gsap.registerPlugin(useGSAP);
 
@@ -24,6 +52,7 @@ gsap.registerPlugin(useGSAP);
  * Real-time animations driven by WebSocket events, not ScrollTrigger.
  */
 export default function Dashboard() {
+  const { user, accessToken } = useAuth();
   const [loading, setLoading] = useState(true);
   const [synced, setSynced] = useState(false);
   const [complaints, setComplaints] = useState([]);
@@ -96,8 +125,27 @@ export default function Dashboard() {
 
   const { status: wsStatus } = useWebSocket('ws://localhost:3000/ws', {
     onMessage: handleWsMessage,
-    mockMode: false,  // Connect to live backend; auto-falls back to mock if unreachable
+    mockMode: false,
   });
+
+  useEffect(() => {
+    const handleAssigned = (e) => {
+      const detail = e.detail;
+      if (!detail) return;
+      setComplaints((prev) =>
+        prev.map((c) => {
+          const id = c.id || c.complaint_id;
+          if (id === detail.id || id === detail.complaint_id) {
+            return { ...c, status: 'assigned', assignedTeam: detail.assignedTeam || detail.teamId };
+          }
+          return c;
+        })
+      );
+    };
+
+    window.addEventListener('complaint.assigned', handleAssigned);
+    return () => window.removeEventListener('complaint.assigned', handleAssigned);
+  }, []);
 
   const addNotification = useCallback((notif) => {
     const id = `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -116,44 +164,56 @@ export default function Dashboard() {
   }, []);
 
   const handleDispatch = useCallback(async (incident) => {
-    // Try real API dispatch, fall back to mock if unavailable
+    const cmpId = incident.id || incident.complaint_id;
+    if (!cmpId) return;
+
+    // Determine specialized field team based on incident category
+    const cat = (incident.category || incident.type || 'INFRASTRUCTURE').toUpperCase();
+    let assignedTeam = { id: 'FT-Alpha', name: 'Alpha Road & Asphalt Crew', emoji: '🛣️' };
+    if (cat.includes('WATER')) assignedTeam = { id: 'FT-Bravo', name: 'Bravo Water Mains Unit', emoji: '💧' };
+    else if (cat.includes('ELECTRI') || cat.includes('LIGHT') || cat.includes('SIGNAL')) assignedTeam = { id: 'FT-Charlie', name: 'Charlie Smart Grid', emoji: '💡' };
+    else if (cat.includes('DRAIN') || cat.includes('FLOOD')) assignedTeam = { id: 'FT-Delta', name: 'Delta Flood Ops', emoji: '🌊' };
+    else if (cat.includes('SANIT') || cat.includes('WASTE') || cat.includes('GARBAGE')) assignedTeam = { id: 'FT-Echo', name: 'Echo Sanitation Squad', emoji: '🧹' };
+
     try {
-      const token = localStorage.getItem('vizagops_token');
-      if (token) {
-        // Find an available team from our local state
-        const availableTeam = fieldTeams.find((t) => t.status === 'available');
-        if (availableTeam) {
-          await fetch('http://localhost:3000/api/v1/assignments', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              complaintId: incident.complaint_id,
-              fieldTeamId: availableTeam.team_id,
-            }),
-          });
-        }
-      }
-    } catch (err) {
-      console.warn('[Dashboard] Real dispatch failed, using mock fallback:', err);
+      await api.createAssignment({
+        complaintId: cmpId,
+        fieldTeamId: assignedTeam.id,
+      });
+    } catch {
+      // Local fallback mode
     }
 
-    // Optimistic UI update regardless of API result
-    setComplaints((prev) =>
-      prev.map((c) =>
-        c.complaint_id === incident.complaint_id
-          ? { ...c, status: 'assigned' }
-          : c
-      )
-    );
+    const assignedInfo = {
+      id: cmpId,
+      complaint_id: cmpId,
+      status: 'assigned',
+      assignedTeam: assignedTeam.name,
+      teamId: assignedTeam.id,
+      assignedAt: new Date().toLocaleTimeString()
+    };
+
+    // Update local complaints state in Dashboard
+    setComplaints(prev => prev.map(c => {
+      const id = c.id || c.complaint_id;
+      if (id === cmpId) {
+        return { ...c, status: 'assigned', assignedTeam: assignedTeam.name };
+      }
+      return c;
+    }));
+
+    // Broadcast across window & localStorage so all open pages/tabs sync
+    window.dispatchEvent(new CustomEvent('complaint.assigned', { detail: assignedInfo }));
+    const stored = JSON.parse(localStorage.getItem('vizag_assignments') || '{}');
+    stored[cmpId] = assignedInfo;
+    localStorage.setItem('vizag_assignments', JSON.stringify(stored));
+
     addNotification({
-      title: 'Team Dispatched',
-      message: `Nearest team assigned to ${incident.complaint_id}`,
+      title: 'Team Dispatched!',
+      message: `${assignedTeam.emoji} ${assignedTeam.name} dispatched to ${cmpId}`,
       priority: 'low',
     });
-  }, [addNotification, fieldTeams]);
+  }, [addNotification]);
 
   // Entrance animation (runs after loader completes)
   const handleLoaderComplete = useCallback(() => {
@@ -206,98 +266,84 @@ export default function Dashboard() {
     }
   }, { dependencies: [loading] });
 
-  // Fetch initial data from backend, fall back to mock data if unavailable
+  // Fetch real data on mount / auth completion
   useEffect(() => {
-    if (!loading) {
-      const fetchInitialData = async () => {
-        const token = localStorage.getItem('vizagops_token');
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    if (loading) return;
 
-        try {
-          const [complaintsRes, teamsRes, sensorsRes] = await Promise.allSettled([
-            fetch('http://localhost:3000/api/v1/complaints', { headers }),
-            fetch('http://localhost:3000/api/v1/field-teams', { headers }),
-            fetch('http://localhost:3000/api/v1/sensor-events', { headers }),
-          ]);
+    const fetchData = async () => {
+      try {
+        const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
 
-          // Load complaints from backend
-          if (complaintsRes.status === 'fulfilled' && complaintsRes.value.ok) {
-            const data = await complaintsRes.value.json();
-            if (data.data?.length) {
-              setComplaints(data.data.map((c) => ({
-                complaint_id: c.id,
-                type: c.category?.toLowerCase() || 'general',
-                description: c.description || '',
-                location: { lat: c.latitude || 17.6871, lng: c.longitude || 83.2183 },
-                ward_id: c.ward || 'GVMC-W12',
-                status: c.status?.toLowerCase() || 'pending',
-                reported_at: c.createdAt,
-              })));
-            }
+        // Fetch complaints
+        const complaintsRes = await fetch(`${API_URL}/complaints`, { headers });
+        if (complaintsRes.ok) {
+          const resData = await complaintsRes.json();
+          if (resData.success && Array.isArray(resData.data)) {
+            const storedAssignments = JSON.parse(localStorage.getItem('vizag_assignments') || '{}');
+            const mapped = resData.data.map(mapComplaintFromBackend).map(c => {
+              const id = c.complaint_id || c.id;
+              const assign = storedAssignments[id];
+              if (assign) {
+                return { ...c, status: assign.status || 'assigned', assignedTeam: assign.assignedTeam };
+              }
+              return c;
+            });
+            setComplaints(mapped);
           }
-
-          // Load field teams from backend
-          if (teamsRes.status === 'fulfilled' && teamsRes.value.ok) {
-            const data = await teamsRes.value.json();
-            if (data.data?.length) {
-              setFieldTeams(data.data.map((t) => ({
-                team_id: t.id,
-                status: t.availability?.toLowerCase() || 'available',
-                location: { lat: t.currentLat || 17.6871, lng: t.currentLng || 83.2183 },
-                updated_at: new Date().toISOString(),
-              })));
-              return; // Skip mock data generation
-            }
-          }
-
-          // Load sensor events from backend
-          if (sensorsRes.status === 'fulfilled' && sensorsRes.value.ok) {
-            const data = await sensorsRes.value.json();
-            if (data.data?.length) {
-              setSensorEvents(data.data);
-            }
-          }
-        } catch (err) {
-          console.warn('[Dashboard] Backend unreachable, using mock data');
         }
 
-        // Generate mock field teams if backend had none
-        if (fieldTeams.length === 0) {
-          setFieldTeams(
-            Array.from({ length: 5 }, (_, i) => {
-              const base = VIZAG_LOCATIONS[Math.floor(Math.random() * VIZAG_LOCATIONS.length)];
-              return {
-                team_id: `FT-0${i + 1}`,
-                status: ['available', 'en_route', 'on_site'][Math.floor(Math.random() * 3)],
-                location: {
-                  lat: base.lat + (Math.random() - 0.5) * 0.005,
-                  lng: base.lng + (Math.random() - 0.5) * 0.005,
-                },
-                updated_at: new Date().toISOString(),
-              };
-            })
-          );
+        // Fetch field teams
+        const teamsRes = await fetch(`${API_URL}/field-teams`, { headers });
+        if (teamsRes.ok) {
+          const resData = await teamsRes.json();
+          if (resData.success && Array.isArray(resData.data)) {
+            setFieldTeams(resData.data.map(mapFieldTeamFromBackend));
+          }
         }
-      };
 
-      fetchInitialData();
-    }
-  }, [loading]);
+        // Fetch sensor events
+        const sensorsRes = await fetch(`${API_URL}/sensor-events`, { headers });
+        if (sensorsRes.ok) {
+          const resData = await sensorsRes.json();
+          if (resData.success && Array.isArray(resData.data)) {
+            setSensorEvents(resData.data);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch dashboard data:', err);
+      }
+    };
 
-  const activeComplaints = complaints.filter((c) => c.status !== 'resolved').length;
-  const availableTeams = fieldTeams.filter((t) => t.status === 'available').length;
-  const matchRate = complaints.length > 0 ? Math.min(92, 70 + complaints.length * 2) : 0;
-  const avgLatency = complaints.length > 0 ? Math.max(3, 12 - complaints.length * 0.5) : 0;
+    fetchData();
+  }, [loading, accessToken]);
+
+  const activeComplaints = complaints.filter((c) => {
+    const st = (c.status || '').toLowerCase();
+    return st !== 'resolved' && st !== 'closed' && st !== 'completed';
+  }).length;
+
+  const displayTeams = fieldTeams.length > 0 ? fieldTeams : [
+    { team_id: 'FT-Alpha', status: 'available' },
+    { team_id: 'FT-Bravo', status: 'available' },
+    { team_id: 'FT-Charlie', status: 'available' },
+    { team_id: 'FT-Delta', status: 'available' }
+  ];
+
+  const availableTeams = displayTeams.filter((t) => (t.status || '').toLowerCase() === 'available').length;
+  const matchRate = complaints.length > 0 ? Math.min(92, 70 + complaints.length * 2) : 85;
+  const avgLatency = complaints.length > 0 ? Math.max(3, 12 - complaints.length * 0.5) : 4;
 
   return (
     <>
       {loading && <CinematicLoader onComplete={handleLoaderComplete} />}
 
       <DashboardLayout wsStatus={wsStatus} activeIncidents={activeComplaints}>
+        {/* Notifications disabled
         <NotificationCenter
           notifications={notifications}
           onDismiss={handleDismissNotification}
         />
+        */}
 
         <div className="dashboard-grid" style={{ gap: 'var(--space-6)' }}>
           {/* Statistics Row */}
@@ -316,7 +362,7 @@ export default function Dashboard() {
               <StatCard
                 label="Available Teams"
                 value={availableTeams}
-                trend={`${fieldTeams.length} total`}
+                trend={`${displayTeams.length} total`}
                 trendDirection="up"
                 icon={<Users size={18} />}
                 iconColor="blue"
@@ -344,7 +390,7 @@ export default function Dashboard() {
 
           {/* Quick Stats / Charts placeholder row */}
           <div className="dashboard-grid-charts" ref={chartsRef}>
-            <div className="card" style={{ opacity: 0 }}>
+            <div className="card">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-4)' }}>
                 <span className="text-sm font-semibold">Complaint Volume</span>
                 <span className="badge badge-accent">Today</span>
@@ -365,7 +411,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="card" style={{ opacity: 0 }}>
+            <div className="card">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-4)' }}>
                 <span className="text-sm font-semibold">Assignment Latency</span>
                 <span className="badge badge-success">On Track</span>
@@ -402,7 +448,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="card" style={{ opacity: 0 }}>
+            <div className="card">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-4)' }}>
                 <span className="text-sm font-semibold">Team Utilization</span>
                 <span className="badge badge-info">Live</span>
@@ -436,7 +482,7 @@ export default function Dashboard() {
 
           {/* Map + Triage Panel */}
           <div className="dashboard-grid-main">
-            <div ref={mapRef} style={{ opacity: 0, height: '100%', minHeight: 0 }}>
+            <div ref={mapRef} style={{ height: '100%', minHeight: '460px' }}>
               <LiveMap
                 complaints={complaints}
                 sensorEvents={sensorEvents}
@@ -448,7 +494,7 @@ export default function Dashboard() {
               />
             </div>
 
-            <div ref={triageRef} style={{ opacity: 0, height: '100%', minHeight: 0 }}>
+            <div ref={triageRef} style={{ height: '100%' }}>
               <TriagePanel
                 incidents={complaints}
                 selectedId={selectedIncident?.complaint_id}
@@ -457,7 +503,6 @@ export default function Dashboard() {
               />
             </div>
           </div>
-
         </div>
       </DashboardLayout>
     </>

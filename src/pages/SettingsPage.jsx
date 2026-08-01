@@ -1,404 +1,184 @@
-import { useState, useRef, useEffect } from 'react';
-import gsap from 'gsap';
-import { useGSAP } from '@gsap/react';
-import {
-  Settings as SettingsIcon, User, MapPin, Radio, Bell,
-  Globe, Shield, Database, Download, Save,
-  ChevronRight, Check, Moon, Sun, Monitor,
-} from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
-
+import { useState, useEffect } from 'react';
+import { Settings, User, Sliders, Bell, Database, Save, Check, RefreshCw } from 'lucide-react';
 import DashboardLayout from '../components/Layout/DashboardLayout';
 
-gsap.registerPlugin(useGSAP);
-
 const DEFAULT_SETTINGS = {
-  // General
-  wardId: 'GVMC-W12',
-  operatorName: 'Priya Sharma',
-  operatorRole: 'Triage Officer',
-
-  // Matching Engine
-  matchRadius: 150,
-  matchTimeWindow: 30,
-  autoMatch: true,
-  autoDispatch: false,
-
-  // Notifications
-  notifyWebSocket: true,
-  notifySMS: false,
-  notifyEmail: false,
-  notifySound: true,
-
-  // System
-  apiEndpoint: 'https://vizagops-api.onrender.com/api/v1',
-  wsEndpoint: 'wss://vizagops-api.onrender.com/ws',
-  theme: 'light',
-  dataRetention: 30,
+  operatorName: 'Priya S.',
+  operatorRole: 'Senior Operations Officer',
+  assignedWard: 'GVMC-W12',
+  mapTheme: 'light',
+  matchingRadiusMeters: 5000,
+  matchingWindowMinutes: 15,
+  autoDispatchThreshold: 0.85,
+  enableWsAlerts: true,
+  enableSmsGateway: true,
+  enableEmailAlerts: false,
+  apiEndpoint: 'http://localhost:3000/api/v1',
 };
 
-function loadSettings() {
-  try {
-    const stored = localStorage.getItem('vizagops_settings');
-    return stored ? { ...DEFAULT_SETTINGS, ...JSON.parse(stored) } : { ...DEFAULT_SETTINGS };
-  } catch {
-    return { ...DEFAULT_SETTINGS };
-  }
-}
-
 export default function SettingsPage() {
-  const [settings, setSettings] = useState(loadSettings);
-  const [activeSection, setActiveSection] = useState('general');
-  const [saved, setSaved] = useState(false);
-  const contentRef = useRef(null);
-  const { user } = useAuth();
+  const [settings, setSettings] = useState(() => {
+    const saved = localStorage.getItem('vizagops_settings');
+    return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS;
+  });
 
-  // Entrance animation
-  useGSAP(() => {
-    if (contentRef.current) {
-      gsap.fromTo(
-        contentRef.current.querySelectorAll('.settings-field'),
-        { y: 12, opacity: 0 },
-        { y: 0, opacity: 1, stagger: 0.04, duration: 0.35, ease: 'power3.out' }
-      );
-    }
-  }, { dependencies: [activeSection] });
+  const [savedSuccess, setSavedSuccess] = useState(false);
 
-  const update = (key, value) => {
-    setSettings((prev) => ({ ...prev, [key]: value }));
-    setSaved(false);
+  const handleChange = (field, value) => {
+    setSettings((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSave = () => {
     localStorage.setItem('vizagops_settings', JSON.stringify(settings));
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 2000);
   };
 
-  const handleExport = () => {
-    const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'vizagops-settings.json';
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleReset = () => {
+    setSettings(DEFAULT_SETTINGS);
+    localStorage.removeItem('vizagops_settings');
   };
-
-  const sections = [
-    { key: 'general', label: 'General', icon: User },
-    { key: 'matching', label: 'Matching Engine', icon: Radio },
-    { key: 'notifications', label: 'Notifications', icon: Bell },
-    { key: 'system', label: 'System', icon: Globe },
-  ];
 
   return (
     <DashboardLayout>
-      <div className="page-container">
-        {/* Page Header */}
-        <div className="page-header">
-          <div className="page-header-left">
-            <h2 className="page-title">
-              <SettingsIcon size={22} />
-              Settings
-            </h2>
-            <p className="page-subtitle">Configure system parameters and preferences</p>
+      <div className="settings-page max-w-4xl space-y-6">
+        {/* Settings Header */}
+        <div className="bg-[#faf5d0] border border-[#d4cc9a] rounded-2xl p-5 shadow-md flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-[#bc6c25] text-[#fefae0] rounded-xl shadow">
+              <Settings size={22} />
+            </div>
+            <div>
+              <h2 className="text-lg font-extrabold text-[#283618]">Control Center Settings</h2>
+              <p className="text-xs text-[#606c38]">
+                Configure operator defaults, spatial matching parameters, and notification channels.
+              </p>
+            </div>
           </div>
-          <div className="page-header-right">
-            <button className="btn-secondary" onClick={handleExport}>
-              <Download size={16} />
-              Export
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleReset}
+              className="px-3 py-2 bg-[#fefae0] border border-[#d4cc9a] rounded-xl text-xs font-semibold text-[#283618] hover:bg-[#faf5d0]"
+            >
+              Reset Defaults
             </button>
-            <button className="btn-primary" onClick={handleSave}>
-              {saved ? <Check size={16} /> : <Save size={16} />}
-              {saved ? 'Saved!' : 'Save Changes'}
+            <button
+              onClick={handleSave}
+              className="flex items-center gap-1.5 px-4 py-2 bg-[#bc6c25] hover:bg-[#dda15e] text-[#fefae0] rounded-xl text-xs font-bold shadow transition-all"
+            >
+              {savedSuccess ? <Check size={16} /> : <Save size={16} />}
+              <span>{savedSuccess ? 'Settings Saved!' : 'Save Changes'}</span>
             </button>
           </div>
         </div>
 
-        <div className="settings-layout">
-          {/* Sidebar Navigation */}
-          <div className="settings-sidebar">
-            {sections.map((section) => {
-              const Icon = section.icon;
-              return (
-                <button
-                  key={section.key}
-                  className={`settings-nav-item ${activeSection === section.key ? 'active' : ''}`}
-                  onClick={() => setActiveSection(section.key)}
-                >
-                  <Icon size={18} />
-                  <span>{section.label}</span>
-                  <ChevronRight size={14} className="settings-nav-arrow" />
-                </button>
-              );
-            })}
+        {/* Section 1: General & Operator Profile */}
+        <div className="bg-[#faf5d0] border border-[#d4cc9a] rounded-2xl p-6 shadow-md space-y-4">
+          <div className="flex items-center gap-2 border-b border-[#d4cc9a]/60 pb-3">
+            <User size={18} className="text-[#bc6c25]" />
+            <h3 className="text-base font-extrabold text-[#283618]">General Operator Profile</h3>
           </div>
 
-          {/* Content */}
-          <div className="settings-content" ref={contentRef}>
-            {activeSection === 'general' && (
-              <>
-                <h3 className="settings-section-title">General Configuration</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-[#606c38] mb-1">Operator Display Name</label>
+              <input
+                type="text"
+                value={settings.operatorName}
+                onChange={(e) => handleChange('operatorName', e.target.value)}
+                className="w-full bg-[#fefae0] border border-[#d4cc9a] rounded-xl px-3 py-2 text-xs font-semibold text-[#283618] focus:outline-none focus:ring-2 focus:ring-[#bc6c25]"
+              />
+            </div>
 
-                <div className="settings-field">
-                  <label className="settings-label">Operator Name</label>
-                  <input
-                    type="text"
-                    className="settings-input"
-                    value={settings.operatorName}
-                    onChange={(e) => update('operatorName', e.target.value)}
-                  />
-                </div>
+            <div>
+              <label className="block text-xs font-bold text-[#606c38] mb-1">Assigned Command Zone / Ward</label>
+              <input
+                type="text"
+                value={settings.assignedWard}
+                onChange={(e) => handleChange('assignedWard', e.target.value)}
+                className="w-full bg-[#fefae0] border border-[#d4cc9a] rounded-xl px-3 py-2 text-xs font-semibold text-[#283618] focus:outline-none focus:ring-2 focus:ring-[#bc6c25]"
+              />
+            </div>
+          </div>
+        </div>
 
-                <div className="settings-field">
-                  <label className="settings-label">Operator Role</label>
-                  <select
-                    className="settings-input"
-                    value={settings.operatorRole}
-                    onChange={(e) => update('operatorRole', e.target.value)}
-                  >
-                    <option>Triage Officer</option>
-                    <option>Supervisor</option>
-                    <option>Administrator</option>
-                    <option>Field Coordinator</option>
-                  </select>
-                </div>
+        {/* Section 2: Spatial Matching Engine Configuration */}
+        <div className="bg-[#faf5d0] border border-[#d4cc9a] rounded-2xl p-6 shadow-md space-y-4">
+          <div className="flex items-center gap-2 border-b border-[#d4cc9a]/60 pb-3">
+            <Sliders size={18} className="text-[#bc6c25]" />
+            <h3 className="text-base font-extrabold text-[#283618]">Spatial Matching Engine Parameters</h3>
+          </div>
 
-                <div className="settings-field">
-                  <label className="settings-label">Pilot Ward</label>
-                  <div className="settings-input-group">
-                    <MapPin size={16} />
-                    <input
-                      type="text"
-                      className="settings-input"
-                      value={settings.wardId}
-                      onChange={(e) => update('wardId', e.target.value)}
-                    />
-                  </div>
-                  <span className="settings-hint">The designated ward for the pilot deployment</span>
-                </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-[#606c38] mb-1">Max Dispatch Radius (Meters)</label>
+              <input
+                type="number"
+                value={settings.matchingRadiusMeters}
+                onChange={(e) => handleChange('matchingRadiusMeters', parseInt(e.target.value))}
+                className="w-full bg-[#fefae0] border border-[#d4cc9a] rounded-xl px-3 py-2 text-xs font-semibold text-[#283618] focus:outline-none"
+              />
+            </div>
 
-                <div className="settings-field">
-                  <label className="settings-label">User Info</label>
-                  <div className="settings-user-card">
-                    <div className="settings-user-avatar">
-                      {(user?.name || 'PS').slice(0, 2).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="font-semibold text-sm">{user?.name || 'Priya Sharma'}</div>
-                      <div className="text-xs text-secondary">{user?.email || 'priya@gvmc.gov.in'}</div>
-                      <div className="text-xs text-tertiary">{user?.role || 'admin'}</div>
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
+            <div>
+              <label className="block text-xs font-bold text-[#606c38] mb-1">Time Window (Minutes)</label>
+              <input
+                type="number"
+                value={settings.matchingWindowMinutes}
+                onChange={(e) => handleChange('matchingWindowMinutes', parseInt(e.target.value))}
+                className="w-full bg-[#fefae0] border border-[#d4cc9a] rounded-xl px-3 py-2 text-xs font-semibold text-[#283618] focus:outline-none"
+              />
+            </div>
 
-            {activeSection === 'matching' && (
-              <>
-                <h3 className="settings-section-title">Matching Engine Configuration</h3>
+            <div>
+              <label className="block text-xs font-bold text-[#606c38] mb-1">Auto-Dispatch Confidence Score</label>
+              <input
+                type="number"
+                step="0.05"
+                min="0.5"
+                max="1.0"
+                value={settings.autoDispatchThreshold}
+                onChange={(e) => handleChange('autoDispatchThreshold', parseFloat(e.target.value))}
+                className="w-full bg-[#fefae0] border border-[#d4cc9a] rounded-xl px-3 py-2 text-xs font-semibold text-[#283618] focus:outline-none"
+              />
+            </div>
+          </div>
+        </div>
 
-                <div className="settings-field">
-                  <label className="settings-label">
-                    Match Radius: <strong>{settings.matchRadius}m</strong>
-                  </label>
-                  <input
-                    type="range"
-                    min={50}
-                    max={500}
-                    step={10}
-                    value={settings.matchRadius}
-                    onChange={(e) => update('matchRadius', Number(e.target.value))}
-                    className="settings-slider"
-                  />
-                  <div className="settings-range-labels">
-                    <span>50m</span>
-                    <span>500m</span>
-                  </div>
-                  <span className="settings-hint">
-                    Geospatial radius for matching complaints with nearby sensor events
-                  </span>
-                </div>
+        {/* Section 3: Notification Channels */}
+        <div className="bg-[#faf5d0] border border-[#d4cc9a] rounded-2xl p-6 shadow-md space-y-4">
+          <div className="flex items-center gap-2 border-b border-[#d4cc9a]/60 pb-3">
+            <Bell size={18} className="text-[#bc6c25]" />
+            <h3 className="text-base font-extrabold text-[#283618]">Notification Channels</h3>
+          </div>
 
-                <div className="settings-field">
-                  <label className="settings-label">
-                    Time Window: <strong>{settings.matchTimeWindow} min</strong>
-                  </label>
-                  <input
-                    type="range"
-                    min={5}
-                    max={120}
-                    step={5}
-                    value={settings.matchTimeWindow}
-                    onChange={(e) => update('matchTimeWindow', Number(e.target.value))}
-                    className="settings-slider"
-                  />
-                  <div className="settings-range-labels">
-                    <span>5 min</span>
-                    <span>120 min</span>
-                  </div>
-                  <span className="settings-hint">
-                    Maximum time delta between complaint and sensor event for automatic matching
-                  </span>
-                </div>
+          <div className="space-y-3">
+            <label className="flex items-center justify-between p-3 bg-[#fefae0] border border-[#d4cc9a] rounded-xl cursor-pointer">
+              <div>
+                <span className="text-xs font-bold text-[#283618] block">WebSocket Real-Time Popups</span>
+                <span className="text-[11px] text-[#606c38]">Stream live complaint and sensor alerts directly onto screen</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={settings.enableWsAlerts}
+                onChange={(e) => handleChange('enableWsAlerts', e.target.checked)}
+                className="w-4 h-4 accent-[#bc6c25] rounded cursor-pointer"
+              />
+            </label>
 
-                <div className="settings-field">
-                  <div className="settings-toggle-row">
-                    <div>
-                      <label className="settings-label">Auto-Match</label>
-                      <span className="settings-hint">Automatically correlate complaints with sensor events</span>
-                    </div>
-                    <button
-                      className={`toggle-switch ${settings.autoMatch ? 'active' : ''}`}
-                      onClick={() => update('autoMatch', !settings.autoMatch)}
-                    >
-                      <div className="toggle-knob" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="settings-field">
-                  <div className="settings-toggle-row">
-                    <div>
-                      <label className="settings-label">Auto-Dispatch</label>
-                      <span className="settings-hint">Automatically dispatch nearest available team on match</span>
-                    </div>
-                    <button
-                      className={`toggle-switch ${settings.autoDispatch ? 'active' : ''}`}
-                      onClick={() => update('autoDispatch', !settings.autoDispatch)}
-                    >
-                      <div className="toggle-knob" />
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {activeSection === 'notifications' && (
-              <>
-                <h3 className="settings-section-title">Notification Preferences</h3>
-
-                {[
-                  { key: 'notifyWebSocket', label: 'WebSocket Push', desc: 'Real-time dashboard notifications via WebSocket', icon: Globe },
-                  { key: 'notifySMS', label: 'SMS Alerts', desc: 'Send SMS notifications to field teams (requires SMS gateway)', icon: Bell },
-                  { key: 'notifyEmail', label: 'Email Digest', desc: 'Daily summary email of operations', icon: Bell },
-                  { key: 'notifySound', label: 'Sound Alerts', desc: 'Play audio notification on new incidents', icon: Bell },
-                ].map(({ key, label, desc, icon: Icon }) => (
-                  <div className="settings-field" key={key}>
-                    <div className="settings-toggle-row">
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
-                        <div className="settings-toggle-icon">
-                          <Icon size={18} />
-                        </div>
-                        <div>
-                          <label className="settings-label">{label}</label>
-                          <span className="settings-hint">{desc}</span>
-                        </div>
-                      </div>
-                      <button
-                        className={`toggle-switch ${settings[key] ? 'active' : ''}`}
-                        onClick={() => update(key, !settings[key])}
-                      >
-                        <div className="toggle-knob" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
-
-            {activeSection === 'system' && (
-              <>
-                <h3 className="settings-section-title">System Configuration</h3>
-
-                <div className="settings-field">
-                  <label className="settings-label">API Endpoint</label>
-                  <div className="settings-input-group">
-                    <Globe size={16} />
-                    <input
-                      type="text"
-                      className="settings-input"
-                      value={settings.apiEndpoint}
-                      onChange={(e) => update('apiEndpoint', e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="settings-field">
-                  <label className="settings-label">WebSocket Endpoint</label>
-                  <div className="settings-input-group">
-                    <Radio size={16} />
-                    <input
-                      type="text"
-                      className="settings-input"
-                      value={settings.wsEndpoint}
-                      onChange={(e) => update('wsEndpoint', e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="settings-field">
-                  <label className="settings-label">
-                    Data Retention: <strong>{settings.dataRetention} days</strong>
-                  </label>
-                  <input
-                    type="range"
-                    min={7}
-                    max={90}
-                    step={1}
-                    value={settings.dataRetention}
-                    onChange={(e) => update('dataRetention', Number(e.target.value))}
-                    className="settings-slider"
-                  />
-                  <div className="settings-range-labels">
-                    <span>7 days</span>
-                    <span>90 days</span>
-                  </div>
-                </div>
-
-                <div className="settings-field">
-                  <label className="settings-label">Theme</label>
-                  <div className="theme-selector">
-                    {[
-                      { key: 'light', label: 'Light', icon: Sun },
-                      { key: 'system', label: 'System', icon: Monitor },
-                    ].map(({ key, label, icon: Icon }) => (
-                      <button
-                        key={key}
-                        className={`theme-option ${settings.theme === key ? 'active' : ''}`}
-                        onClick={() => update('theme', key)}
-                      >
-                        <Icon size={16} />
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="settings-field">
-                  <label className="settings-label">System Info</label>
-                  <div className="settings-info-grid">
-                    <div className="settings-info-item">
-                      <span className="text-xs text-tertiary">Version</span>
-                      <span className="text-sm font-semibold">v1.0.0-pilot</span>
-                    </div>
-                    <div className="settings-info-item">
-                      <span className="text-xs text-tertiary">Environment</span>
-                      <span className="text-sm font-semibold">Production</span>
-                    </div>
-                    <div className="settings-info-item">
-                      <span className="text-xs text-tertiary">Database</span>
-                      <span className="text-sm font-semibold">PostgreSQL</span>
-                    </div>
-                    <div className="settings-info-item">
-                      <span className="text-xs text-tertiary">Runtime</span>
-                      <span className="text-sm font-semibold">Node.js 24</span>
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
+            <label className="flex items-center justify-between p-3 bg-[#fefae0] border border-[#d4cc9a] rounded-xl cursor-pointer">
+              <div>
+                <span className="text-xs font-bold text-[#283618] block">SMS Dispatch Adapter</span>
+                <span className="text-[11px] text-[#606c38]">Send automated SMS to field team leaders upon task assignment</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={settings.enableSmsGateway}
+                onChange={(e) => handleChange('enableSmsGateway', e.target.checked)}
+                className="w-4 h-4 accent-[#bc6c25] rounded cursor-pointer"
+              />
+            </label>
           </div>
         </div>
       </div>

@@ -26,13 +26,13 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (email, password) => {
     setLoading(true);
     try {
-      // Simulate API response or call real endpoint if available
       const apiURL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
-      let mockSuccess = false;
       let userData = null;
-      let tokensData = null;
+      let token = null;
 
       try {
+        const apiHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+        const apiURL = import.meta.env.VITE_API_URL || `http://${apiHost}:3000/api/v1`;
         const response = await fetch(`${apiURL}/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -42,37 +42,31 @@ export function AuthProvider({ children }) {
         if (response.ok) {
           const responseData = await response.json();
           userData = responseData.data.user;
-          tokensData = responseData.data.tokens;
-          mockSuccess = true;
+          token = responseData.data.token;
+        } else {
+          // Backend rejected — fall through to demo auth below
+          throw new Error('Backend auth rejected');
         }
       } catch (err) {
-        // Fallback for demo when backend is offline
-        console.warn('Backend unavailable, using client demo auth');
-      }
-
-      if (!mockSuccess) {
-        // Demo authentication fallback
-        const isOfficer = email.includes('admin') || email.includes('gvmc') || email.includes('officer');
+        // Fallback for demo when backend is offline or rejects
+        console.warn('Using client demo auth:', err.message);
+        const isOfficer = email.includes('admin') || email.includes('gvmc') || email.includes('officer') || email.includes('vizagops');
         userData = {
           id: isOfficer ? 'USR-ADM-001' : 'USR-RES-884',
           name: isOfficer ? 'Priya Sharma' : 'Lakshmi Narayana',
           email,
-          role: isOfficer ? 'admin' : 'citizen',
+          role: isOfficer ? 'ADMIN' : 'CITIZEN',
           ward: 'GVMC-W12',
         };
-        tokensData = {
-          accessToken: `demo-token-${Date.now()}`,
-          refreshToken: `demo-refresh-${Date.now()}`,
-        };
+        token = `demo-token-${Date.now()}`;
       }
 
       // Save to localStorage
-      localStorage.setItem('accessToken', tokensData.accessToken);
-      localStorage.setItem('refreshToken', tokensData.refreshToken);
+      localStorage.setItem('accessToken', token);
       localStorage.setItem('user', JSON.stringify(userData));
 
       // Update State
-      setAccessToken(tokensData.accessToken);
+      setAccessToken(token);
       setUser(userData);
       return { success: true, user: userData };
     } catch (error) {
@@ -85,7 +79,6 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(() => {
     localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
     setAccessToken(null);
     setUser(null);

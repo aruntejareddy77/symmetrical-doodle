@@ -19,6 +19,14 @@ export const createAssignment = async (req: any, res: any, next: any) => {
       eta_minutes: 15
     });
 
+    broadcastEvent("complaint.updated", {
+      id: assignment.complaintId,
+      complaint_id: assignment.complaintId,
+      status: "assigned",
+      assignedTeam: assignment.fieldTeamId || "Field Response Unit",
+      updatedAt: new Date().toISOString()
+    });
+
     broadcastEvent("team.update", {
       team_id: assignment.fieldTeamId,
       status: "busy",

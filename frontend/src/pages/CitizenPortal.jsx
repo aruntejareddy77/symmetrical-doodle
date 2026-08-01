@@ -12,29 +12,29 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
 /* ── Status Color & Label Mapping ──────────────────────────── */
 const STATUS_CONFIG = {
-  PENDING:     { label: 'Received',    color: '#dda15e', bg: 'rgba(221,161,94,0.12)',  icon: Clock },
-  OPEN:        { label: 'Under Review', color: '#606c38', bg: 'rgba(96,108,56,0.10)',   icon: Eye },
-  ASSIGNED:    { label: 'Team Assigned', color: '#2563eb', bg: 'rgba(37,99,235,0.10)',  icon: CheckCircle },
-  IN_PROGRESS: { label: 'In Progress',  color: '#bc6c25', bg: 'rgba(188,108,37,0.12)', icon: Loader2 },
-  RESOLVED:    { label: 'Resolved',     color: '#16a34a', bg: 'rgba(22,163,74,0.10)',   icon: CheckCircle },
-  CLOSED:      { label: 'Closed',       color: '#6b7280', bg: 'rgba(107,114,128,0.10)', icon: X },
-  CANCELLED:   { label: 'Cancelled',    color: '#ef4444', bg: 'rgba(239,68,68,0.10)',   icon: X },
+  PENDING: { label: 'Received', color: '#dda15e', bg: 'rgba(221,161,94,0.12)', icon: Clock },
+  OPEN: { label: 'Under Review', color: '#606c38', bg: 'rgba(96,108,56,0.10)', icon: Eye },
+  ASSIGNED: { label: 'Team Assigned', color: '#2563eb', bg: 'rgba(37,99,235,0.10)', icon: CheckCircle },
+  IN_PROGRESS: { label: 'In Progress', color: '#bc6c25', bg: 'rgba(188,108,37,0.12)', icon: Loader2 },
+  RESOLVED: { label: 'Resolved', color: '#16a34a', bg: 'rgba(22,163,74,0.10)', icon: CheckCircle },
+  CLOSED: { label: 'Closed', color: '#6b7280', bg: 'rgba(107,114,128,0.10)', icon: X },
+  CANCELLED: { label: 'Cancelled', color: '#ef4444', bg: 'rgba(239,68,68,0.10)', icon: X },
 };
 
 /* ── Category Options ──────────────────────────────────────── */
 const CATEGORIES = [
   { value: 'INFRASTRUCTURE', label: 'Potholes / Roads', emoji: '🛣️' },
-  { value: 'ELECTRICAL',     label: 'Streetlights',     emoji: '💡' },
-  { value: 'WATER_SUPPLY',   label: 'Water Supply',     emoji: '💧' },
-  { value: 'DRAINAGE',       label: 'Drainage',         emoji: '🌊' },
-  { value: 'SANITATION',     label: 'Sanitation',       emoji: '🧹' },
-  { value: 'GENERAL',        label: 'Other',            emoji: '📋' },
+  { value: 'ELECTRICAL', label: 'Streetlights', emoji: '💡' },
+  { value: 'WATER_SUPPLY', label: 'Water Supply', emoji: '💧' },
+  { value: 'DRAINAGE', label: 'Drainage', emoji: '🌊' },
+  { value: 'SANITATION', label: 'Sanitation', emoji: '🧹' },
+  { value: 'GENERAL', label: 'Other', emoji: '📋' },
 ];
 
 const PRIORITY_OPTIONS = [
-  { value: 'LOW',    label: 'Low',    color: '#6b7280' },
+  { value: 'LOW', label: 'Low', color: '#6b7280' },
   { value: 'MEDIUM', label: 'Medium', color: '#dda15e' },
-  { value: 'HIGH',   label: 'High',   color: '#bc6c25' },
+  { value: 'HIGH', label: 'High', color: '#bc6c25' },
 ];
 
 /* ══════════════════════════════════════════════════════════════
@@ -64,10 +64,10 @@ export default function CitizenPortal() {
     longitude: 83.2185,
   });
 
-  /* ── GPS Geolocation Handler ──────────────────────────────── */
+  /* ── GPS Geolocation Handler with Automatic Fallback ─────── */
   const handleDetectLocation = () => {
     if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser.');
+      setForm(prev => ({ ...prev, latitude: 17.6868, longitude: 83.2185, address: prev.address || 'Siripuram Junction' }));
       return;
     }
     setLocationLoading(true);
@@ -77,14 +77,21 @@ export default function CitizenPortal() {
           ...prev,
           latitude: Number(position.coords.latitude.toFixed(4)),
           longitude: Number(position.coords.longitude.toFixed(4)),
+          address: prev.address || 'Detected GPS Location'
         }));
         setLocationLoading(false);
       },
       (error) => {
-        console.error('GPS error:', error);
-        alert('Unable to retrieve location. Please type your address or adjust coordinates manually.');
+        console.warn('GPS detection unavailable or blocked:', error);
+        setForm(prev => ({
+          ...prev,
+          latitude: 17.6868,
+          longitude: 83.2185,
+          address: prev.address || 'Siripuram Junction (Default)'
+        }));
         setLocationLoading(false);
-      }
+      },
+      { timeout: 5000, enableHighAccuracy: true }
     );
   };
 
@@ -108,66 +115,29 @@ export default function CitizenPortal() {
     reader.readAsDataURL(file);
   };
 
-  /* ── Fetch Complaints (mock for now, real API ready) ─────── */
+  /* ── Fetch Complaints ─────────────────────────────────────── */
   const fetchComplaints = useCallback(async () => {
     try {
       setRefreshing(true);
-      // Try real API first
-      try {
-        const res = await fetch(`${API_URL}/complaints`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && data.data) {
-            setComplaints(data.data);
-            return;
-          }
+      const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+      const res = await fetch(`${API_URL}/complaints`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) {
+          const storedAssignments = JSON.parse(localStorage.getItem('vizag_assignments') || '{}');
+          const merged = data.data.map(c => {
+            const id = c.id || c.complaint_id;
+            const assign = storedAssignments[id];
+            if (assign) {
+              return { ...c, status: assign.status || 'ASSIGNED', assignedTeam: assign.assignedTeam };
+            }
+            return c;
+          });
+          setComplaints(merged);
         }
-      } catch (e) { /* Backend might not have GET /complaints yet */ }
-
-      // Fallback demo data
-      setComplaints([
-        {
-          id: 'CMP-20260730-0042',
-          title: 'Pothole on Main Street',
-          description: 'Large pothole near bus stop causing traffic slowdowns.',
-          category: 'INFRASTRUCTURE',
-          priority: 'HIGH',
-          status: 'ASSIGNED',
-          ward: 'Ward 12',
-          latitude: 17.6870,
-          longitude: 83.2190,
-          createdAt: '2026-07-30T09:12:00+05:30',
-          assigned_team: 'Alpha Response',
-          eta_minutes: 12,
-        },
-        {
-          id: 'CMP-20260729-0038',
-          title: 'Streetlight Outage on Park Avenue',
-          description: 'Streetlight has been flickering for 3 days and finally went out.',
-          category: 'ELECTRICAL',
-          priority: 'MEDIUM',
-          status: 'PENDING',
-          ward: 'Ward 15',
-          latitude: 17.6900,
-          longitude: 83.2250,
-          createdAt: '2026-07-29T15:30:00+05:30',
-        },
-        {
-          id: 'CMP-20260728-0031',
-          title: 'Water pipeline broken near park gate',
-          description: 'Pipeline leaking heavily, water flooding the walkway.',
-          category: 'WATER_SUPPLY',
-          priority: 'HIGH',
-          status: 'RESOLVED',
-          ward: 'Ward 10',
-          latitude: 17.6950,
-          longitude: 83.2280,
-          createdAt: '2026-07-28T08:45:00+05:30',
-          resolvedAt: '2026-07-29T14:20:00+05:30',
-        },
-      ]);
+      }
+    } catch (e) {
+      console.error('Error fetching complaints from PostgreSQL:', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -178,6 +148,27 @@ export default function CitizenPortal() {
     fetchComplaints();
   }, [fetchComplaints]);
 
+  useEffect(() => {
+    const handleAssigned = (e) => {
+      const detail = e.detail;
+      if (!detail) return;
+      setComplaints(prev => prev.map(c => {
+        const id = c.id || c.complaint_id;
+        if (id === detail.id || id === detail.complaint_id) {
+          return { ...c, status: 'ASSIGNED', assignedTeam: detail.assignedTeam || detail.teamId };
+        }
+        return c;
+      }));
+    };
+
+    window.addEventListener('complaint.assigned', handleAssigned);
+    window.addEventListener('storage', fetchComplaints);
+    return () => {
+      window.removeEventListener('complaint.assigned', handleAssigned);
+      window.removeEventListener('storage', fetchComplaints);
+    };
+  }, [fetchComplaints]);
+
   /* ── Submit New Complaint ─────────────────────────────────── */
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -185,41 +176,39 @@ export default function CitizenPortal() {
 
     setSubmitting(true);
     try {
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+      };
+
+      const payload = {
+        title: form.title.trim(),
+        description: form.description || '',
+        category: form.category || 'INFRASTRUCTURE',
+        priority: form.priority || 'MEDIUM',
+        ward: form.address ? `Near ${form.address}` : 'GVMC-W12',
+        latitude: typeof form.latitude === 'number' && !isNaN(form.latitude) ? form.latitude : 17.6868,
+        longitude: typeof form.longitude === 'number' && !isNaN(form.longitude) ? form.longitude : 83.2185,
+      };
+
       const res = await fetch(`${API_URL}/complaints`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify(form),
+        headers,
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
         const data = await res.json();
-        setComplaints(prev => [data.data, ...prev]);
-      } else {
-        // Fallback: add mock complaint to list
-        setComplaints(prev => [{
-          id: `CMP-${Date.now()}`,
-          ...form,
-          status: 'PENDING',
-          createdAt: new Date().toISOString(),
-        }, ...prev]);
+        if (data.data) {
+          setComplaints(prev => [data.data, ...prev]);
+        }
       }
 
       const resetForm = { title: '', description: '', category: 'INFRASTRUCTURE', priority: 'MEDIUM', address: '', attachment: null, latitude: 17.6868, longitude: 83.2185 };
       setForm(resetForm);
       setView('list');
     } catch (err) {
-      // Offline fallback
-      setComplaints(prev => [{
-        id: `CMP-${Date.now()}`,
-        ...form,
-        status: 'PENDING',
-        createdAt: new Date().toISOString(),
-      }, ...prev]);
-      setForm({ title: '', description: '', category: 'INFRASTRUCTURE', priority: 'MEDIUM', address: '', attachment: null, latitude: 17.6868, longitude: 83.2185 });
-      setView('list');
+      console.error('Error submitting complaint to PostgreSQL:', err);
     } finally {
       setSubmitting(false);
     }
@@ -489,6 +478,42 @@ export default function CitizenPortal() {
                 placeholder="e.g. Near Siripuram Circle, Ward 12"
                 style={{ ...inputStyle, background: '#fff' }}
               />
+            </div>
+
+            {/* Quick Location Presets */}
+            <div style={{ marginBottom: 12 }}>
+              <span style={{ fontSize: '0.7rem', color: '#606c38', display: 'block', marginBottom: 6, fontWeight: 600 }}>
+                Quick Zone Select:
+              </span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {[
+                  { name: 'Siripuram', lat: 17.6868, lng: 83.2185 },
+                  { name: 'RK Beach', lat: 17.6790, lng: 83.2110 },
+                  { name: 'MVP Colony', lat: 17.7250, lng: 83.2380 },
+                  { name: 'Gajuwaka', lat: 17.6950, lng: 83.2250 },
+                  { name: 'Dwaraka Nagar', lat: 17.7180, lng: 83.2310 }
+                ].map((preset) => (
+                  <button
+                    key={preset.name}
+                    type="button"
+                    onClick={() => setForm(prev => ({
+                      ...prev,
+                      address: preset.name,
+                      latitude: preset.lat,
+                      longitude: preset.lng
+                    }))}
+                    style={{
+                      background: form.address === preset.name ? '#bc6c25' : '#fefae0',
+                      color: form.address === preset.name ? '#fefae0' : '#283618',
+                      border: '1px solid #d4cc9a',
+                      borderRadius: 6, padding: '3px 8px', fontSize: '0.7rem',
+                      fontWeight: 600, cursor: 'pointer'
+                    }}
+                  >
+                    📍 {preset.name}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Coordinates Fields */}

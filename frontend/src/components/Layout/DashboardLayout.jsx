@@ -42,7 +42,7 @@ export default function DashboardLayout({ children, wsStatus = 'connected', acti
         <nav className="sidebar-nav" aria-label="Main navigation">
           <div className="sidebar-section-label">Operations</div>
 
-          <NavLink to="/" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} end>
+          <NavLink to="/dashboard" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} end>
             <LayoutDashboard size={20} className="sidebar-link-icon" />
             {!sidebarCollapsed && 'Dashboard'}
             {!sidebarCollapsed && activeIncidents > 0 && (

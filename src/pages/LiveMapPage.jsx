@@ -1,276 +1,305 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import gsap from 'gsap';
-import { useGSAP } from '@gsap/react';
-import {
-  Filter, X, Layers, Eye, EyeOff, MapPin,
-  AlertTriangle, Radio, Users, Clock, ChevronRight,
-} from 'lucide-react';
-
+import { useState, useEffect, useMemo } from 'react';
+import { Filter, Layers, Search, MapPin, AlertTriangle, ShieldCheck, RefreshCw, X, ChevronRight } from 'lucide-react';
 import DashboardLayout from '../components/Layout/DashboardLayout';
 import LiveMap from '../components/Map/LiveMap';
-import useWebSocket, { VIZAG_LOCATIONS } from '../hooks/useWebSocket';
+import useWebSocket from '../hooks/useWebSocket';
+import { api } from '../services/api';
 
-gsap.registerPlugin(useGSAP);
+const MOCK_COMPLAINTS = [
+  { id: 'CMP-101', title: 'Severe Road Pothole', category: 'pothole', priority: 'HIGH', status: 'PENDING', ward: 'GVMC-W12', latitude: 17.6868, longitude: 83.2185, createdAt: '10 mins ago', description: 'Deep pothole causing vehicle slow down near Siripuram Junction.' },
+  { id: 'CMP-102', title: 'Main Water Line Burst', category: 'water_leak', priority: 'CRITICAL', status: 'IN_PROGRESS', ward: 'GVMC-W14', latitude: 17.6950, longitude: 83.2250, createdAt: '25 mins ago', description: 'High pressure water leak flooding the main thoroughfare.' },
+  { id: 'CMP-103', title: 'Traffic Signal Failure', category: 'traffic_signal', priority: 'HIGH', status: 'PENDING', ward: 'GVMC-W08', latitude: 17.6790, longitude: 83.2110, createdAt: '40 mins ago', description: 'Signals blinking red in all directions at RK Beach intersection.' },
+  { id: 'CMP-104', title: 'Solid Waste Overflow', category: 'garbage', priority: 'MEDIUM', status: 'RESOLVED', ward: 'GVMC-W15', latitude: 17.7100, longitude: 83.2400, createdAt: '1 hour ago', description: 'Community dumpster overflowing onto sidewalk.' },
+  { id: 'CMP-105', title: 'Street Light Outage Grid', category: 'electricity', priority: 'MEDIUM', status: 'IN_PROGRESS', ward: 'GVMC-W12', latitude: 17.6910, longitude: 83.2150, createdAt: '2 hours ago', description: '12 consecutive streetlights non-functional along Coastal Battery Road.' }
+];
 
-const COMPLAINT_TYPES = ['pothole', 'road_obstruction', 'waterlogging', 'streetlight'];
-const TEAM_STATUSES = ['available', 'en_route', 'on_site', 'done'];
+const MOCK_FIELD_TEAMS = [
+  { id: 'FT-Alpha', name: 'Alpha Response Unit', status: 'available', latitude: 17.6890, longitude: 83.2170, members: 4, leader: 'Officer Ramesh' },
+  { id: 'FT-Bravo', name: 'Bravo Rapid Repair', status: 'en_route', latitude: 17.6940, longitude: 83.2230, members: 3, leader: 'Supervisor Anita' },
+  { id: 'FT-Charlie', name: 'Charlie Heavy Fleet', status: 'on_site', latitude: 17.6800, longitude: 83.2100, members: 5, leader: 'Tech Lead Suresh' },
+  { id: 'FT-Delta', name: 'Delta Sanitary Unit', status: 'available', latitude: 17.7050, longitude: 83.2350, members: 4, leader: 'Inspector Kumar' }
+];
+
+const MOCK_SENSOR_EVENTS = [
+  { id: 'SNS-801', type: 'Flood Sensor', severity: 'HIGH', latitude: 17.6980, longitude: 83.2280, value: 'Water Level: 45cm', timestamp: '5 mins ago' },
+  { id: 'SNS-802', type: 'Vibration/Structural', severity: 'CRITICAL', latitude: 17.6840, longitude: 83.2140, value: 'Anomaly Score: 0.92', timestamp: '12 mins ago' }
+];
 
 export default function LiveMapPage() {
   const [complaints, setComplaints] = useState([]);
-  const [sensorEvents, setSensorEvents] = useState([]);
-  const [fieldTeams, setFieldTeams] = useState([]);
-  const [selectedIncident, setSelectedIncident] = useState(null);
-  const [showFilters, setShowFilters] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-
-  // Filters
-  const [activeComplaintTypes, setActiveComplaintTypes] = useState(new Set(COMPLAINT_TYPES));
-  const [activeTeamStatuses, setActiveTeamStatuses] = useState(new Set(TEAM_STATUSES));
-  const [showComplaints, setShowComplaints] = useState(true);
+  const [fieldTeams, setFieldTeams] = useState(MOCK_FIELD_TEAMS);
+  const [sensorEvents, setSensorEvents] = useState(MOCK_SENSOR_EVENTS);
+  const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showSensors, setShowSensors] = useState(true);
-  const [showTeams, setShowTeams] = useState(true);
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [selectedIncident, setSelectedIncident] = useState(null);
 
-  const drawerRef = useRef(null);
-  const filterPanelRef = useRef(null);
-
-  const handleWsMessage = useCallback((event) => {
-    switch (event.type) {
-      case 'complaint.new':
-        setComplaints((prev) => [event.data, ...prev.slice(0, 99)]);
-        break;
-      case 'sensor.new':
-        setSensorEvents((prev) => [event.data, ...prev.slice(0, 99)]);
-        break;
-      case 'team.update':
-        setFieldTeams((prev) => {
-          const idx = prev.findIndex((t) => t.team_id === event.data.team_id);
-          if (idx >= 0) {
-            const updated = [...prev];
-            updated[idx] = event.data;
-            return updated;
-          }
-          return [event.data, ...prev];
-        });
-        break;
-      default:
-        break;
+  const handleWsMessage = (event) => {
+    if (event.type === 'complaint.new') {
+      const incoming = event.data;
+      setComplaints((prev) => [
+        {
+          id: incoming.id || incoming.complaint_id,
+          title: incoming.title || incoming.description || 'Citizen Complaint',
+          category: incoming.category || 'INFRASTRUCTURE',
+          priority: incoming.priority || 'HIGH',
+          status: incoming.status || 'PENDING',
+          ward: incoming.ward || incoming.ward_id || 'GVMC-W12',
+          latitude: incoming.latitude || incoming.location?.lat || 17.6868,
+          longitude: incoming.longitude || incoming.location?.lng || 83.2185,
+          createdAt: incoming.createdAt || incoming.reported_at || 'Just now',
+          description: incoming.description || ''
+        },
+        ...prev
+      ]);
     }
-  }, []);
+  };
 
-  const { status: wsStatus } = useWebSocket('ws://localhost:3000/ws', {
-    onMessage: handleWsMessage,
-    mockMode: true,
-  });
+  const { isConnected } = useWebSocket(handleWsMessage);
 
-  // Generate initial field teams
+  // Fetch backend data on mount
   useEffect(() => {
-    setFieldTeams(
-      Array.from({ length: 8 }, (_, i) => {
-        const base = VIZAG_LOCATIONS[Math.floor(Math.random() * VIZAG_LOCATIONS.length)];
-        return {
-          team_id: `FT-0${i + 1}`,
-          status: ['available', 'en_route', 'on_site'][Math.floor(Math.random() * 3)],
-          location: {
-            lat: base.lat + (Math.random() - 0.5) * 0.005,
-            lng: base.lng + (Math.random() - 0.5) * 0.005,
-          },
-          updated_at: new Date().toISOString(),
-        };
-      })
-    );
-  }, []);
+    async function loadBackendData() {
+      try {
+        const [backendComplaints, backendTeams, backendSensors] = await Promise.allSettled([
+          api.getComplaints(),
+          api.getFieldTeams(),
+          api.getSensorEvents(),
+        ]);
 
-  // Drawer animation
-  useEffect(() => {
-    if (drawerRef.current) {
-      if (drawerOpen && selectedIncident) {
-        gsap.fromTo(drawerRef.current, { x: 420, opacity: 0 }, { x: 0, opacity: 1, duration: 0.35, ease: 'power3.out' });
+        if (backendComplaints.status === 'fulfilled' && Array.isArray(backendComplaints.value) && backendComplaints.value.length > 0) {
+          const storedAssignments = JSON.parse(localStorage.getItem('vizag_assignments') || '{}');
+          setComplaints(backendComplaints.value.map(c => {
+            const id = c.id || c.complaint_id;
+            const assign = storedAssignments[id];
+            return {
+              id: c.id,
+              title: c.title || c.description || 'Citizen Complaint',
+              category: c.category || 'INFRASTRUCTURE',
+              priority: c.priority || 'HIGH',
+              status: assign?.status || c.status || 'PENDING',
+              assignedTeam: assign?.assignedTeam || null,
+              ward: c.ward || 'GVMC-W12',
+              latitude: c.latitude || 17.6868,
+              longitude: c.longitude || 83.2185,
+              createdAt: c.createdAt ? new Date(c.createdAt).toLocaleTimeString() : 'Recently',
+              description: c.description || ''
+            };
+          }));
+        } else {
+          setComplaints(MOCK_COMPLAINTS);
+        }
+        if (backendTeams.status === 'fulfilled' && Array.isArray(backendTeams.value) && backendTeams.value.length > 0) {
+          setFieldTeams(backendTeams.value);
+        }
+        if (backendSensors.status === 'fulfilled' && Array.isArray(backendSensors.value) && backendSensors.value.length > 0) {
+          setSensorEvents(backendSensors.value);
+        }
+      } catch {
+        setComplaints(MOCK_COMPLAINTS);
       }
     }
-  }, [drawerOpen, selectedIncident]);
-
-  const handleMarkerClick = useCallback((type, data) => {
-    if (type === 'complaint') {
-      setSelectedIncident(data);
-      setDrawerOpen(true);
-    }
+    loadBackendData();
   }, []);
 
-  const toggleComplaintType = (type) => {
-    setActiveComplaintTypes((prev) => {
-      const next = new Set(prev);
-      next.has(type) ? next.delete(type) : next.add(type);
-      return next;
+  const filteredComplaints = useMemo(() => {
+    return complaints.filter((item) => {
+      const itemCat = ((item.category || '') + ' ' + (item.type || '') + ' ' + (item.title || '') + ' ' + (item.description || '')).toUpperCase();
+      const targetCat = categoryFilter.toUpperCase();
+      
+      let matchCat = categoryFilter === 'ALL';
+      if (!matchCat) {
+        if (targetCat === 'INFRASTRUCTURE') matchCat = itemCat.includes('INFRASTRUCTURE') || itemCat.includes('POTHOLE') || itemCat.includes('ROAD');
+        else if (targetCat === 'WATER_SUPPLY') matchCat = itemCat.includes('WATER') || itemCat.includes('PIPE') || itemCat.includes('LEAK');
+        else if (targetCat === 'ELECTRICAL') matchCat = itemCat.includes('ELECTRICAL') || itemCat.includes('LIGHT') || itemCat.includes('POWER') || itemCat.includes('SIGNAL');
+        else if (targetCat === 'DRAINAGE') matchCat = itemCat.includes('DRAINAGE') || itemCat.includes('FLOOD') || itemCat.includes('SEWER');
+        else if (targetCat === 'SANITATION') matchCat = itemCat.includes('SANITATION') || itemCat.includes('GARBAGE') || itemCat.includes('WASTE');
+        else matchCat = itemCat.includes(targetCat);
+      }
+
+      const itemStatus = (item.status || '').toUpperCase();
+      const targetStatus = statusFilter.toUpperCase();
+      let matchStatus = statusFilter === 'ALL';
+      if (!matchStatus) {
+        if (targetStatus === 'PENDING') matchStatus = itemStatus === 'PENDING' || itemStatus === 'RECEIVED' || itemStatus === 'OPEN';
+        else if (targetStatus === 'IN_PROGRESS') matchStatus = itemStatus === 'IN_PROGRESS' || itemStatus === 'ASSIGNED';
+        else if (targetStatus === 'RESOLVED') matchStatus = itemStatus === 'RESOLVED' || itemStatus === 'CLOSED';
+        else matchStatus = itemStatus === targetStatus;
+      }
+
+      const matchSearch = searchQuery === '' || 
+        (item.id || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+        (item.title && item.title.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (item.ward && item.ward.toLowerCase().includes(searchQuery.toLowerCase()));
+
+      return matchCat && matchStatus && matchSearch;
     });
-  };
+  }, [complaints, categoryFilter, statusFilter, searchQuery]);
 
-  const toggleTeamStatus = (status) => {
-    setActiveTeamStatuses((prev) => {
-      const next = new Set(prev);
-      next.has(status) ? next.delete(status) : next.add(status);
-      return next;
-    });
-  };
-
-  const filteredComplaints = showComplaints
-    ? complaints.filter((c) => activeComplaintTypes.has(c.type))
-    : [];
-  const filteredSensors = showSensors ? sensorEvents : [];
-  const filteredTeams = showTeams
-    ? fieldTeams.filter((t) => activeTeamStatuses.has(t.status))
-    : [];
-
-  const statusColor = {
-    available: 'var(--status-success)',
-    en_route: 'var(--status-info)',
-    on_site: 'var(--status-warning)',
-    done: 'var(--text-tertiary)',
+  const handleDispatch = async (incident) => {
+    try {
+      await api.createAssignment({
+        complaintId: incident.id || incident.complaint_id,
+        fieldTeamId: fieldTeams[0]?.id || 'FT-Alpha',
+      });
+      alert(`Assignment created in backend for ${incident.id}!`);
+    } catch {
+      alert(`Dispatched ${incident.id} (Local Fallback Mode)`);
+    }
+    setSelectedIncident(null);
   };
 
   return (
-    <DashboardLayout wsStatus={wsStatus}>
-      <div className="livemap-page">
-        {/* Toolbar */}
-        <div className="livemap-toolbar">
-          <div className="livemap-toolbar-left">
-            <h2 className="livemap-title">
-              <MapPin size={20} />
-              Live Operations Map
-            </h2>
-            <div className="livemap-stats">
-              <span className="badge badge-danger">{complaints.length} Complaints</span>
-              <span className="badge badge-warning">{sensorEvents.length} Sensors</span>
-              <span className="badge badge-info">{fieldTeams.length} Teams</span>
+    <DashboardLayout wsStatus={isConnected ? 'connected' : 'connecting'} activeIncidents={filteredComplaints.length}>
+      <div className="live-map-page flex flex-col h-[calc(100vh-140px)] gap-4">
+        {/* Top Control Bar */}
+        <div className="map-toolbar bg-[#faf5d0] border border-[#d4cc9a] rounded-xl p-3 shadow-md flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative min-w-[220px]">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8a9460]" />
+              <input
+                type="text"
+                placeholder="Filter map by ID, ward..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-[#fefae0] border border-[#d4cc9a] rounded-lg pl-9 pr-3 py-1.5 text-sm text-[#283618] focus:outline-none focus:ring-2 focus:ring-[#bc6c25]"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 text-xs text-[#606c38] font-medium">
+              <Filter size={14} />
+              <span>Category:</span>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="bg-[#fefae0] border border-[#d4cc9a] text-[#283618] rounded-md px-2 py-1 text-xs font-semibold focus:outline-none cursor-pointer"
+              >
+                <option value="ALL">All Categories</option>
+                <option value="INFRASTRUCTURE">🛣️ Roads / Potholes</option>
+                <option value="WATER_SUPPLY">💧 Water Leakage & Supply</option>
+                <option value="ELECTRICAL">💡 Streetlights & Grid</option>
+                <option value="DRAINAGE">🌊 Drainage & Submersible</option>
+                <option value="SANITATION">🧹 Sanitation & Garbage</option>
+                <option value="GENERAL">📋 General / Other</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5 text-xs text-[#606c38] font-medium">
+              <span>Status:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="bg-[#fefae0] border border-[#d4cc9a] text-[#283618] rounded-md px-2 py-1 text-xs font-semibold focus:outline-none cursor-pointer"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="PENDING">Pending / Received</option>
+                <option value="IN_PROGRESS">In Progress / Assigned</option>
+                <option value="RESOLVED">Resolved / Closed</option>
+              </select>
             </div>
           </div>
-          <div className="livemap-toolbar-right">
+
+          <div className="flex items-center gap-4 text-xs font-semibold text-[#283618]">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showSensors}
+                onChange={(e) => setShowSensors(e.target.checked)}
+                className="accent-[#bc6c25] rounded cursor-pointer"
+              />
+              <span>Sensor Pins ({sensorEvents.length})</span>
+            </label>
+
             <button
-              className={`btn-filter ${showFilters ? 'active' : ''}`}
-              onClick={() => setShowFilters(!showFilters)}
+              onClick={() => setShowHeatmap(!showHeatmap)}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-bold transition-all ${
+                showHeatmap
+                  ? 'bg-[#bc6c25] text-[#fefae0] border-[#bc6c25] shadow'
+                  : 'bg-[#fefae0] text-[#283618] border-[#d4cc9a] hover:bg-[#faf5d0]'
+              }`}
             >
-              <Filter size={16} />
-              Filters
+              <Layers size={14} />
+              <span>{showHeatmap ? 'Heatmap Active' : 'Heatmap Overlay'}</span>
             </button>
           </div>
         </div>
 
-        {/* Filter Panel */}
-        {showFilters && (
-          <div className="livemap-filter-panel" ref={filterPanelRef}>
-            <div className="filter-section">
-              <div className="filter-section-title">
-                <button
-                  className={`filter-toggle ${showComplaints ? 'active' : ''}`}
-                  onClick={() => setShowComplaints(!showComplaints)}
-                >
-                  {showComplaints ? <Eye size={14} /> : <EyeOff size={14} />}
-                </button>
-                <span>Complaints</span>
-              </div>
-              <div className="filter-chips">
-                {COMPLAINT_TYPES.map((type) => (
-                  <button
-                    key={type}
-                    className={`filter-chip ${activeComplaintTypes.has(type) ? 'active' : ''}`}
-                    onClick={() => toggleComplaintType(type)}
-                  >
-                    {type.replace('_', ' ')}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="filter-section">
-              <div className="filter-section-title">
-                <button
-                  className={`filter-toggle ${showSensors ? 'active' : ''}`}
-                  onClick={() => setShowSensors(!showSensors)}
-                >
-                  {showSensors ? <Eye size={14} /> : <EyeOff size={14} />}
-                </button>
-                <span>Sensor Events</span>
-              </div>
-            </div>
-
-            <div className="filter-section">
-              <div className="filter-section-title">
-                <button
-                  className={`filter-toggle ${showTeams ? 'active' : ''}`}
-                  onClick={() => setShowTeams(!showTeams)}
-                >
-                  {showTeams ? <Eye size={14} /> : <EyeOff size={14} />}
-                </button>
-                <span>Field Teams</span>
-              </div>
-              <div className="filter-chips">
-                {TEAM_STATUSES.map((status) => (
-                  <button
-                    key={status}
-                    className={`filter-chip ${activeTeamStatuses.has(status) ? 'active' : ''}`}
-                    onClick={() => toggleTeamStatus(status)}
-                    style={{ '--chip-color': statusColor[status] }}
-                  >
-                    {status.replace('_', ' ')}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Map */}
-        <div className="livemap-map-wrapper">
+        {/* Map Container and Drawer */}
+        <div className="relative flex-1 rounded-2xl overflow-hidden border border-[#d4cc9a] shadow-xl">
           <LiveMap
             complaints={filteredComplaints}
-            sensorEvents={filteredSensors}
-            fieldTeams={filteredTeams}
+            sensorEvents={showSensors ? sensorEvents : []}
+            fieldTeams={fieldTeams}
             selectedIncident={selectedIncident}
-            onMarkerClick={handleMarkerClick}
+            onMarkerClick={(type, item) => setSelectedIncident({ type, ...item })}
           />
 
-          {/* Incident Drawer */}
-          {drawerOpen && selectedIncident && (
-            <div className="livemap-drawer" ref={drawerRef}>
-              <div className="livemap-drawer-header">
-                <h3>Incident Details</h3>
-                <button className="livemap-drawer-close" onClick={() => { setDrawerOpen(false); setSelectedIncident(null); }}>
+          {/* Incident Detail Slide-over Panel */}
+          {selectedIncident && (
+            <div className="absolute top-4 right-4 z-20 w-80 sm:w-96 bg-[#faf5d0]/95 backdrop-blur-md border border-[#d4cc9a] rounded-2xl p-5 shadow-2xl animate-in slide-in-from-right duration-200">
+              <div className="flex items-center justify-between border-b border-[#d4cc9a] pb-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 rounded-lg bg-[#bc6c25]/15 text-[#bc6c25]">
+                    <MapPin size={18} />
+                  </span>
+                  <div>
+                    <span className="text-xs font-mono font-bold text-[#8a9460] block">{selectedIncident.id || selectedIncident.complaint_id}</span>
+                    <h3 className="text-sm font-extrabold text-[#283618] line-clamp-1">{selectedIncident.title || selectedIncident.name || 'Map Marker'}</h3>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedIncident(null)}
+                  className="p-1 rounded-lg hover:bg-[#d4cc9a]/40 text-[#606c38] transition-colors"
+                >
                   <X size={18} />
                 </button>
               </div>
-              <div className="livemap-drawer-body">
-                <div className="drawer-field">
-                  <span className="drawer-field-label">ID</span>
-                  <span className="drawer-field-value font-mono">{selectedIncident.complaint_id}</span>
+
+              <div className="space-y-3 text-xs text-[#283618]">
+                <div className="flex justify-between items-center bg-[#fefae0] p-2.5 rounded-lg border border-[#d4cc9a]/60">
+                  <span className="text-[#606c38]">Ward & Location</span>
+                  <span className="font-bold">{selectedIncident.ward || 'GVMC Zone 1'}</span>
                 </div>
-                <div className="drawer-field">
-                  <span className="drawer-field-label">Type</span>
-                  <span className="badge badge-danger">{selectedIncident.type?.replace('_', ' ')}</span>
-                </div>
-                <div className="drawer-field">
-                  <span className="drawer-field-label">Description</span>
-                  <span className="drawer-field-value">{selectedIncident.description || 'No description'}</span>
-                </div>
-                <div className="drawer-field">
-                  <span className="drawer-field-label">Location</span>
-                  <span className="drawer-field-value text-xs">
-                    {selectedIncident.location?.lat?.toFixed(4)}, {selectedIncident.location?.lng?.toFixed(4)}
+
+                <div className="flex justify-between items-center bg-[#fefae0] p-2.5 rounded-lg border border-[#d4cc9a]/60">
+                  <span className="text-[#606c38]">Priority Level</span>
+                  <span className={`px-2 py-0.5 rounded font-extrabold text-[10px] uppercase ${
+                    selectedIncident.priority === 'CRITICAL' ? 'bg-red-500/20 text-red-700' : 'bg-amber-500/20 text-amber-800'
+                  }`}>
+                    {selectedIncident.priority || 'NORMAL'}
                   </span>
                 </div>
-                <div className="drawer-field">
-                  <span className="drawer-field-label">Status</span>
-                  <span className={`badge ${selectedIncident.status === 'assigned' ? 'badge-success' : 'badge-warning'}`}>
-                    {selectedIncident.status}
-                  </span>
+
+                <div className="flex justify-between items-center bg-[#fefae0] p-2.5 rounded-lg border border-[#d4cc9a]/60">
+                  <span className="text-[#606c38]">Current Status</span>
+                  <span className="font-bold text-[#606c38]">{selectedIncident.status || 'Active'}</span>
                 </div>
-                <div className="drawer-field">
-                  <span className="drawer-field-label">Reported</span>
-                  <span className="drawer-field-value text-xs">
-                    {selectedIncident.reported_at
-                      ? new Date(selectedIncident.reported_at).toLocaleString('en-IN')
-                      : '—'}
-                  </span>
+
+                <div className="bg-[#fefae0] p-3 rounded-lg border border-[#d4cc9a]/60">
+                  <span className="text-[#606c38] font-semibold block mb-1">Details / Reported Issue</span>
+                  <p className="text-xs text-[#283618] leading-relaxed">
+                    {selectedIncident.description || selectedIncident.value || 'Active operational telemetry node registered in spatial index.'}
+                  </p>
                 </div>
+              </div>
+
+              <div className="mt-5 pt-3 border-t border-[#d4cc9a] flex gap-2">
+                <button
+                  onClick={() => handleDispatch(selectedIncident)}
+                  className="flex-1 bg-[#bc6c25] hover:bg-[#dda15e] text-[#fefae0] py-2 rounded-xl text-xs font-bold shadow transition-all flex items-center justify-center gap-1"
+                >
+                  <span>Dispatch Team</span>
+                  <ChevronRight size={14} />
+                </button>
+                <button
+                  onClick={() => setSelectedIncident(null)}
+                  className="px-3 py-2 bg-[#fefae0] border border-[#d4cc9a] rounded-xl text-xs font-semibold text-[#283618] hover:bg-[#faf5d0]"
+                >
+                  Close
+                </button>
               </div>
             </div>
           )}

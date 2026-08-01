@@ -24,7 +24,11 @@ export default function IncidentTimeline({ currentStep = 'received' }) {
   const connectorsRef = useRef([]);
   const prevStepRef = useRef(-1);
 
-  const currentIndex = TIMELINE_STEPS.findIndex((s) => s.key === currentStep);
+  const stepKey = (currentStep || '').toLowerCase();
+  const normalizedKey = (stepKey === 'pending' || stepKey === 'open') ? 'received' :
+                        (stepKey === 'in_progress') ? 'in-progress' : stepKey;
+
+  const currentIndex = TIMELINE_STEPS.findIndex((s) => s.key === normalizedKey);
 
   useEffect(() => {
     if (currentIndex < 0) return;

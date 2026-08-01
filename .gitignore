@@ -38,3 +38,4 @@ backend/packages/**/prisma/*.js
 *.db
 *.db-shm
 *.db-wal
+.vercel

@@ -62,14 +62,11 @@ export default function TriagePanel({ incidents = [], onSelectIncident, onDispat
   };
 
   const getStatusBadge = (status) => {
-    const classes = {
-      received: 'badge-accent',
-      matched: 'badge-info',
-      assigned: 'badge-warning',
-      'in-progress': 'badge-success',
-      resolved: 'badge-success',
-    };
-    return <span className={`badge ${classes[status] || 'badge-accent'}`}>{status.replace('-', ' ')}</span>;
+    const s = (status || '').toLowerCase();
+    if (s === 'assigned') return <span className="badge badge-info font-extrabold bg-blue-500/20 text-blue-800">ASSIGNED</span>;
+    if (s === 'in_progress' || s === 'in-progress') return <span className="badge badge-success font-extrabold bg-green-500/20 text-green-800">IN PROGRESS</span>;
+    if (s === 'resolved') return <span className="badge badge-success font-extrabold bg-green-600/20 text-green-900">RESOLVED</span>;
+    return <span className="badge badge-accent font-extrabold">{s.toUpperCase() || 'PENDING'}</span>;
   };
 
   const getTimeSince = (timestamp) => {
@@ -100,30 +97,31 @@ export default function TriagePanel({ incidents = [], onSelectIncident, onDispat
 
       <div className="triage-panel-list" ref={listRef}>
         {incidents.map((incident) => {
-          const isSelected = selectedId === incident.complaint_id;
+          const isSelected = selectedId === incident.complaint_id || selectedId === incident.id;
+          const status = (incident.status || '').toLowerCase();
+          const isPending = status === 'received' || status === 'pending' || status === 'open';
+          const isAssigned = status === 'assigned' || status === 'in_progress' || status === 'in-progress';
+
           return (
             <div
-              key={incident.complaint_id}
-              id={`incident-${incident.complaint_id}`}
+              key={incident.complaint_id || incident.id}
+              id={`incident-${incident.complaint_id || incident.id}`}
               className={`incident-card ${isSelected ? 'highlight' : ''}`}
               onClick={() => {
                 onSelectIncident?.(incident);
-                handleHighlight(incident.complaint_id);
+                handleHighlight(incident.complaint_id || incident.id);
               }}
-              role="button"
-              tabIndex={0}
-              aria-label={`Incident ${incident.complaint_id}`}
-              style={{ opacity: 0 }}
+              style={{ cursor: 'pointer' }}
             >
               <div className="incident-card-header">
                 <div>
-                  <span className="incident-card-id">{incident.complaint_id}</span>
-                  <div className="incident-card-type">{incident.type?.replace('_', ' ')}</div>
+                  <span className="incident-card-id">{incident.complaint_id || incident.id}</span>
+                  <div className="incident-card-type">{(incident.category || incident.type || 'INFRASTRUCTURE').replace('_', ' ')}</div>
                 </div>
                 {getStatusBadge(incident.status)}
               </div>
 
-              <p className="incident-card-desc">{incident.description}</p>
+              <p className="incident-card-desc">{incident.description || incident.title}</p>
 
               {isSelected && (
                 <IncidentTimeline currentStep={incident.status} />
@@ -132,15 +130,15 @@ export default function TriagePanel({ incidents = [], onSelectIncident, onDispat
               <div className="incident-card-footer">
                 <div className="incident-card-meta">
                   <MapPin size={12} />
-                  <span>{incident.location?.lat?.toFixed(4)}, {incident.location?.lng?.toFixed(4)}</span>
+                  <span>{(incident.latitude || incident.location?.lat || 17.6868).toFixed(4)}, {(incident.longitude || incident.location?.lng || 83.2185).toFixed(4)}</span>
                 </div>
                 <div className="incident-card-meta">
                   <Clock size={12} />
-                  <span>{getTimeSince(incident.reported_at)}</span>
+                  <span>{getTimeSince(incident.reported_at || incident.createdAt)}</span>
                 </div>
               </div>
 
-              {isSelected && incident.status === 'received' && (
+              {isSelected && isPending && (
                 <div style={{ marginTop: 'var(--space-3)' }}>
                   <DispatchButton
                     onClick={(e) => {
@@ -150,6 +148,12 @@ export default function TriagePanel({ incidents = [], onSelectIncident, onDispat
                   >
                     Dispatch Nearest Team <ChevronRight size={16} />
                   </DispatchButton>
+                </div>
+              )}
+
+              {isSelected && isAssigned && (
+                <div style={{ marginTop: 'var(--space-3)', padding: '8px 12px', background: 'rgba(37,99,235,0.15)', borderRadius: '10px', border: '1px solid rgba(37,99,235,0.3)', color: '#1e40af', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>✅ Assigned to {incident.assignedTeam || incident.assigned_team_id || 'Field Response Unit'}</span>
                 </div>
               )}
             </div>

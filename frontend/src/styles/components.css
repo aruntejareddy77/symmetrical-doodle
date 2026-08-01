@@ -428,61 +428,71 @@
 
 /* --- Triage Panel --- */
 .triage-panel {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  background: var(--bg-primary, #faf5d0);
+  border: 1px solid var(--border-color, #d4cc9a);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: var(--shadow-sm, 0 4px 12px rgba(0,0,0,0.06));
   display: flex;
   flex-direction: column;
   overflow: hidden;
   height: 100%;
+  max-height: 480px;
 }
 
 .triage-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--border-color);
+  padding: var(--space-4, 16px) var(--space-5, 20px);
+  border-bottom: 1px solid var(--border-color, #d4cc9a);
+  background: var(--bg-secondary, #fefae0);
 }
 
 .triage-panel-title {
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  color: var(--text-primary);
+  font-size: var(--text-sm, 14px);
+  font-weight: var(--font-semibold, 700);
+  color: var(--text-primary, #283618);
 }
 
 .triage-panel-count {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
+  font-size: var(--text-xs, 12px);
+  font-weight: 700;
+  color: var(--accent-primary, #bc6c25);
+  background: rgba(188, 108, 37, 0.12);
+  padding: 2px 8px;
+  border-radius: 12px;
 }
 
 .triage-panel-list {
   flex: 1;
-  overflow-y: auto;
-  padding: var(--space-3);
+  overflow-y: auto !important;
+  max-height: 415px;
+  padding: var(--space-3, 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   scrollbar-width: thin;
-  scrollbar-color: var(--accent-primary) var(--bg-secondary);
+  scrollbar-color: #bc6c25 #fefae0;
   overscroll-behavior: contain;
 }
 
 .triage-panel-list::-webkit-scrollbar {
-  width: 6px;
+  width: 7px;
 }
 
 .triage-panel-list::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
-  border-radius: 3px;
+  background: #fefae0;
+  border-radius: 4px;
 }
 
 .triage-panel-list::-webkit-scrollbar-thumb {
-  background: var(--accent-primary);
-  border-radius: 3px;
+  background: #bc6c25;
+  border-radius: 4px;
   transition: background 0.2s ease;
 }
 
 .triage-panel-list::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-hover);
+  background: #dda15e;
 }
 
 /* --- Incident Card --- */

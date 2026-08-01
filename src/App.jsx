@@ -3,6 +3,7 @@ import { AuthProvider } from './context/AuthContext';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
+import CitizenPortal from './pages/CitizenPortal';
 import LiveMapPage from './pages/LiveMapPage';
 import FieldTeamsPage from './pages/FieldTeamsPage';
 import SensorFeedsPage from './pages/SensorFeedsPage';
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/audit-log" element={<AuditLogPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/citizen" element={<CitizenPortal />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
